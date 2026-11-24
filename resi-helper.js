@@ -484,7 +484,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.9.0';
+  const VERSION = '0.9.1';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
@@ -556,6 +556,21 @@
     #rh-menu .rh-m-links button { border:2px solid #b1b1b1; background:transparent; color:#b1b1b1; border-radius:100px; font:700 12px Arial, sans-serif; padding:6px 0; }
     #rh-menu .rh-m-links button:hover { border-color:#fff; color:#fff; }
     #rh-menu .rh-m-links span { color:inherit; }
+
+    /* ---- Update-Hinweis ---- */
+    #rh-navbtn .rh-dot { right:auto; left:-4px; }  /* Sprechwunsch-Punkt links, Update-Zeichen rechts */
+    #rh-navbtn .rh-upd-badge { display:none; position:absolute; top:-7px; right:-14px; background:#28a745; color:#fff;
+      border-radius:20px; padding:.9px 4.5px; font:700 9px/1.25 Arial, sans-serif; }
+    #rh-navbtn.rh-upd .rh-upd-badge { display:block; }
+    #rh-menu .rh-m-update { display:flex; align-items:center; gap:10px; margin:14px 14px 0; padding:10px 12px;
+      background:#21242b; border-radius:12.5px; box-shadow:inset 3px 0 0 #28a745; }
+    #rh-menu .rh-m-update div { flex:1; min-width:0; }
+    #rh-menu .rh-m-update b { display:block; font-size:13px; }
+    #rh-menu .rh-m-update small { color:#b1b1b1; font-size:11.5px; }
+    #rh-menu .rh-m-update button, #rh-cc .rh-upd-btn { cursor:pointer; border:2px solid #28a745; background:transparent; color:#28a745;
+      border-radius:100px; font:700 12px Arial, sans-serif; padding:4px 12px; white-space:nowrap; }
+    #rh-menu .rh-m-update button:hover, #rh-cc .rh-upd-btn:hover { background:#28a745; color:#fff; }
+    #rh-cc .rh-cc-updbox .rh-upd-btn { display:block; width:100%; margin-bottom:10px; }
     #rh-menu .rh-m-group { display:flex; justify-content:space-between; padding:10px 14px 3px; font-size:10px;
       letter-spacing:.08em; text-transform:uppercase; color:#6c757d; font-weight:700; }
     #rh-menu .rh-m-row { display:flex; align-items:center; gap:10px; padding:7px 14px; cursor:pointer; user-select:none; }
@@ -582,7 +597,7 @@
   const navBtn = document.createElement('div');
   navBtn.id = 'rh-navbtn';
   navBtn.title = 'ReSi-Helfer';
-  navBtn.innerHTML = faIcon('sliders-h') + '<span class="rh-dot"></span>';
+  navBtn.innerHTML = faIcon('sliders-h') + '<span class="rh-dot"></span><span class="rh-upd-badge">neu</span>';
   renderFa(navBtn);
   const headerRight = document.querySelector('header .right');
   headerRight?.insertBefore(navBtn, headerRight.firstChild);
@@ -610,6 +625,11 @@
         <div><div class="rh-m-title">ReSi-Helfer</div><div class="rh-m-sub">${active} von ${ALL_KEYS.length} Modulen aktiv</div></div>
         <span class="rh-m-ver">v${VERSION}</span>
       </div>
+      ${updateAvailable() ? `
+      <div class="rh-m-update">
+        <div><b>Update verfügbar</b><small>v${VERSION} → v${latestVersion}</small></div>
+        <button data-update>Installieren</button>
+      </div>` : ''}
       <div class="rh-m-links">
         <button data-open="modules"><span>▦</span> Module</button>
         <button data-open="stats"><span>▥</span> Statistik</button>
@@ -633,6 +653,7 @@
     navBtn.classList.add('rh-open');
 
     menu.addEventListener('click', e => {
+      if (e.target.closest('[data-update]')) { closeMenu(); return installUpdate(); }
       const page = e.target.closest('[data-open]')?.dataset.open;
       if (page) { closeMenu(); openCenter(page); }
     });
@@ -646,6 +667,49 @@
     if (!e.target.closest('#rh-menu, #rh-navbtn')) closeMenu();
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+
+  // =====================================================================
+  // Update-Hinweis: prüft auf GitHub, ob es eine neuere Version gibt
+  // =====================================================================
+  const UPDATE_URL = 'https://raw.githubusercontent.com/ShadowZyroX7/Resi-Helfer/main/resi-helfer.user.js';
+  const UPDATE_KEY = 'resiHelfer.update';
+  const UPDATE_EVERY = 30 * 60000; // höchstens alle 30 Minuten nachsehen
+  let latestVersion = null, updateChecked = 0;
+
+  const isNewer = (a, b) => { // ist Version a neuer als b?
+    const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d > 0;
+    }
+    return false;
+  };
+  const updateAvailable = () => !!latestVersion && isNewer(latestVersion, VERSION);
+
+  async function checkForUpdate(force) {
+    const cached = JSON.parse(localStorage.getItem(UPDATE_KEY) || 'null');
+    if (!force && cached && Date.now() - cached.checked < UPDATE_EVERY) {
+      latestVersion = cached.latest; updateChecked = cached.checked;
+    } else {
+      try {
+        const text = await fetch(`${UPDATE_URL}?t=${Date.now()}`, { cache: 'no-store' })
+          .then(r => (r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status))));
+        latestVersion = text.match(/@version\s+([\d.]+)/)?.[1] || null;
+        updateChecked = Date.now();
+        localStorage.setItem(UPDATE_KEY, JSON.stringify({ checked: updateChecked, latest: latestVersion }));
+      } catch (e) { console.warn('[ReSi-Helfer] Update-Prüfung fehlgeschlagen', e); }
+    }
+    navBtn.classList.toggle('rh-upd', updateAvailable());
+    navBtn.title = updateAvailable() ? `ReSi-Helfer – Update auf v${latestVersion} verfügbar` : 'ReSi-Helfer';
+    const menu = document.getElementById('rh-menu');
+    if (menu) renderMenu(menu);
+    if (document.getElementById('rh-cc')) renderCenter();
+  }
+  // Tampermonkey erkennt den .user.js-Link und zeigt seine Installationsseite
+  const installUpdate = () => window.open(UPDATE_URL, '_blank', 'noopener');
+
+  checkForUpdate();
+  setInterval(checkForUpdate, UPDATE_EVERY);
 
   // Hotkeys an ein offenes Einsatzfenster weiterreichen, solange der Fokus noch in der Leitstelle liegt
   document.addEventListener('keydown', e => {
@@ -1039,7 +1103,7 @@
           <div class="rh-cc-nav" data-page="modules">${GRID_ICON}<span>Module</span><span class="rh-cc-count"></span></div>
           <div class="rh-cc-nav" data-page="stats">${STATS_ICON}<span>Statistik</span></div>
           <div class="rh-cc-nav" data-page="settings">${SETTINGS_ICON}<span>Einstellungen</span></div>
-          <div class="rh-cc-sidefoot"><div class="rh-cc-active"></div><div class="rh-cc-meter"><i></i></div>Version ${VERSION}</div>
+          <div class="rh-cc-sidefoot"><div class="rh-cc-updbox"></div><div class="rh-cc-active"></div><div class="rh-cc-meter"><i></i></div>Version ${VERSION}</div>
         </aside>
         <section class="rh-cc-main">
           <div class="rh-cc-head"><div><h2></h2><p></p></div><div class="rh-cc-close" title="Schließen (Esc)">✕</div></div>
@@ -1051,6 +1115,7 @@
     cc.addEventListener('mousedown', e => { if (e.target === cc) closeCenter(); });
     cc.querySelector('.rh-cc-close').onclick = closeCenter;
     cc.querySelector('.rh-cc-side').addEventListener('click', e => {
+      if (e.target.closest('[data-update]')) return installUpdate();
       const p = e.target.closest('[data-page]')?.dataset.page;
       if (p) { ccPage = p; renderCenter(); }
     });
@@ -1068,6 +1133,10 @@
     cc.querySelector('.rh-cc-count').textContent = `${active}/${ALL_KEYS.length}`;
     cc.querySelector('.rh-cc-active').textContent = `${active} von ${ALL_KEYS.length} Modulen aktiv`;
     cc.querySelector('.rh-cc-meter i').style.width = (active / ALL_KEYS.length * 100) + '%';
+    const updHtml = updateAvailable()
+      ? `<button class="rh-upd-btn" data-update title="Öffnet die Tampermonkey-Installation">↑ Update auf v${latestVersion}</button>` : '';
+    const updBox = cc.querySelector('.rh-cc-updbox');
+    if (updBox.innerHTML !== updHtml) updBox.innerHTML = updHtml;
     const [h2, p] = [cc.querySelector('.rh-cc-head h2'), cc.querySelector('.rh-cc-head p')];
     const body = cc.querySelector('.rh-cc-body');
     const scroll = body.scrollTop;
@@ -1151,6 +1220,10 @@
         </div></div>
 
         <div class="rh-cc-sec"><h3>${secIcon('buildingNotes')} Daten</h3><div class="rh-cc-rows">
+          <div class="rh-cc-row"><div class="rh-cc-lbl"><b>Version ${VERSION}${updateAvailable() ? ` – <span style="color:#28a745">v${latestVersion} verfügbar</span>` : latestVersion ? ' – aktuell' : ''}</b>
+            <small>${updateChecked ? `Zuletzt geprüft um ${new Date(updateChecked).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · ` : ''}Tampermonkey installiert Updates auch selbst, meist einmal am Tag</small></div>
+            <div class="rh-cc-btns">${updateAvailable() ? '<button class="rh-upd-btn" data-update>Installieren</button>' : ''}
+              <button class="rh-btn" data-act="checkUpdate">Jetzt prüfen</button></div></div>
           <div class="rh-cc-row"><div class="rh-cc-lbl"><b>Sichern &amp; wiederherstellen</b>
             <small>Einstellungen und Wachen-Notizen als Datei speichern oder laden</small></div>
             <div class="rh-cc-btns"><button class="rh-btn" data-act="export">Exportieren</button>
@@ -1386,6 +1459,8 @@
       ccRecording = ccRecording === k ? null : k;
       return renderCenter();
     }
+    if (act === 'checkUpdate') { e.target.textContent = 'Prüfe …'; return checkForUpdate(true); }
+    if (e.target.closest('[data-update]')) return installUpdate();
     if (act === 'keysDefault') { settings.keys = Object.assign({}, DEFAULTS.keys); ccRecording = null; return afterChange(); }
     if (act === 'resetDay') { daily = { date: todayStr(), earned: 0, finished: 0 }; saveDaily(); renderHeaderStats(); return renderCenter(); }
     if (act === 'export') {

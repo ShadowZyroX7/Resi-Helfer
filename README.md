@@ -8,7 +8,7 @@ Ein Tampermonkey-Skript für [rettungssimulator.online](https://rettungssimulato
 2. Öffne den Installations-Link: **[resi-helfer.user.js](https://raw.githubusercontent.com/ShadowZyroX7/Resi-Helfer/main/resi-helfer.user.js)**
 3. Klicke in Tampermonkey auf **„Installieren“** und lade den Rettungssimulator neu.
 
-Updates kommen automatisch über Tampermonkey.
+Updates kommen automatisch über Tampermonkey. Gibt es eine neue Version, zeigt das Skript außerdem einen **Update-Hinweis** am Menü-Symbol. Ein Klick auf „Installieren“ holt sie sofort.
 
 ## Funktionen
 
