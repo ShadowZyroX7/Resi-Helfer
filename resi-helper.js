@@ -47,6 +47,8 @@
       shareClose: 'Shift+F',
       create: 'Ctrl+Enter',
       createOpen: 'Ctrl+Shift+Enter',
+      prevMission: 'A',
+      nextMission: 'D',
     },
   };
   const settings = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
@@ -63,6 +65,8 @@
     ['shareClose', 'Freigeben & Schließen',    'Einsatzfenster'],
     ['create',     'Anlegen',                  'Einsatz anlegen'],
     ['createOpen', 'Anlegen & öffnen',         'Einsatz anlegen'],
+    ['prevMission', 'Vorheriger Einsatz',      'Einsatzfenster – springt in der Einsatzliste nach oben'],
+    ['nextMission', 'Nächster Einsatz',        'Einsatzfenster – springt in der Einsatzliste nach unten'],
   ];
   // "Ctrl+Shift+Enter" aus einem Tastendruck; Buchstaben/Ziffern unabhängig von Shift
   function comboFromEvent(e) {
@@ -484,7 +488,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.9.1';
+  const VERSION = '0.9.2';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
@@ -1209,7 +1213,7 @@
               <button class="rh-btn" data-act="rec" data-key="${a}">${ccRecording === a ? 'Abbrechen' : 'Ändern'}</button>
             </div>`).join('')}
           <div class="rh-cc-row"><div class="rh-cc-lbl"><b>Standardbelegung</b>
-            <small>Enter / ⇧+Enter / F / ⇧+F im Einsatz · Strg+Enter / Strg+⇧+Enter beim Anlegen</small></div>
+            <small>Enter / ⇧+Enter / F / ⇧+F / A / D im Einsatz · Strg+Enter / Strg+⇧+Enter beim Anlegen</small></div>
             <button class="rh-btn" data-act="keysDefault">Wiederherstellen</button></div>
         </div></div>
 
@@ -1845,8 +1849,12 @@
       listbar.querySelector('.rh-info').textContent = hiddenCount ? `${hiddenCount} ausgeblendet` : '';
       const keysEl = listbar.querySelector('.rh-keys');
       keysEl.style.display = settings.hotkeys ? '' : 'none';
-      const legend = [['alarm', 'Alarm'], ['alarmClose', '+ Schließen'], ['share', 'Freigeben']]
-        .filter(([a]) => settings.keys[a]).map(([a, l]) => `${prettyCombo(settings.keys[a])} ${l}`).join(' · ');
+      const k = settings.keys;
+      const parts = [['alarm', 'Alarm'], ['alarmClose', '+ Schließen'], ['share', 'Freigeben']]
+        .filter(([a]) => k[a]).map(([a, l]) => `${prettyCombo(k[a])} ${l}`);
+      const nav = [k.prevMission, k.nextMission].filter(Boolean).map(prettyCombo).join(' / ');
+      if (nav) parts.push(`${nav} Einsatz wechseln`);
+      const legend = parts.join(' · ');
       if (keysEl.innerHTML !== legend) keysEl.innerHTML = legend;
     }
     listbar.addEventListener('click', e => {
@@ -1928,11 +1936,34 @@
       share: '.alarming-submit-share',
       shareClose: '.alarming-submit-share-close',
     };
+    // Zum vorherigen/nächsten Einsatz in der Einsatzliste der Leitstelle springen (am Ende geht es von vorn los)
+    function gotoMission(step) {
+      let top;
+      try { top = window.top.document; } catch (e) { return false; } // Einsatz in eigenem Tab geöffnet
+      const own = [...top.querySelectorAll('#missions-container-own .mission-list-mission[usermissionid]')];
+      const shared = [...top.querySelectorAll('#missions-container-shared .mission-list-mission[usermissionid]')];
+      const idOf = el => el.getAttribute('usermissionid');
+      // in der Liste bleiben, in der der aktuelle Einsatz steht (eigene Einsätze oder Freigaben)
+      const list = shared.some(el => idOf(el) === missionId) ? shared : own;
+      if (!list.length) return true;
+      const i = list.findIndex(el => idOf(el) === missionId);
+      const next = i < 0 ? list[step > 0 ? 0 : list.length - 1] : list[(i + step + list.length) % list.length];
+      if (idOf(next) === missionId) return true; // nur ein Einsatz in der Liste
+      // genauso öffnen, als hätte man in der Liste auf den Einsatz geklickt
+      const opener = next.querySelector('.mission-list-content.frame-opener, .frame-opener');
+      if (opener) opener.click(); else location.href = 'mission/' + idOf(next);
+      next.scrollIntoView({ block: 'nearest' });
+      return true;
+    }
+
     // gibt true zurück, wenn das Kürzel zu einer Aktion gehört
     function handleCombo(combo, typing) {
       if (!settings.hotkeys || !combo) return false;
+      if (typing && needsFreeFocus(combo)) return false;
+      if (settings.keys.prevMission === combo) return gotoMission(-1);
+      if (settings.keys.nextMission === combo) return gotoMission(1);
       const action = Object.keys(MISSION_BUTTONS).find(a => settings.keys[a] === combo);
-      if (!action || (typing && needsFreeFocus(combo))) return false;
+      if (!action) return false;
       const btn = document.querySelector(MISSION_BUTTONS[action]);
       if (!btn) return false;
       if (!btn.classList.contains('button-disabled')) {

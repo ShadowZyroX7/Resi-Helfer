@@ -33,7 +33,7 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 **Einsatzfenster**
 - **Einsatz-Check:** Benötigte Fahrzeuge, was schon vor Ort, unterwegs oder ausgewählt ist, dazu Vergütung und Dauer.
 - **Listenfilter:** „Nur freie“, „Nur benötigte“ und ein Umkreis in km.
-- **Hotkeys (frei belegbar):** Alarmieren, Freigeben, Anlegen. Mit Zusatztaste jeweils auch „& Schließen“ bzw. „& öffnen“.
+- **Hotkeys (frei belegbar):** Alarmieren, Freigeben, Anlegen, mit Zusatztaste jeweils auch „& Schließen“ bzw. „& öffnen“. Mit **A** / **D** springst du zum vorherigen bzw. nächsten Einsatz.
 - **Stichwort fokussieren:** Beim Anlegen eines Einsatzes steht der Cursor sofort im Einsatzstichwort.
 
 ## Datenschutz
