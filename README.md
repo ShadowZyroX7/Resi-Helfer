@@ -1,2 +1,48 @@
 # Resi-Helfer
-Eine Tampermonkey script für den Rettungssimulator.online, dass Erweiterungen bringt
+
+Ein Tampermonkey-Skript für [rettungssimulator.online](https://rettungssimulator.online), das Erweiterungen bringt. Es macht die Leitstelle übersichtlicher und spart Klicks. Gespielt wird aber weiter von dir: Das Skript alarmiert nie selbst.
+
+## Installation
+
+1. Installiere [Tampermonkey](https://www.tampermonkey.net/) in deinem Browser (Firefox, Chrome, Edge, LibreWolf …).
+2. Öffne den Installations-Link: **[resi-helfer.user.js](https://raw.githubusercontent.com/ShadowZyroX7/Resi-Helfer/main/resi-helfer.user.js)**
+3. Klicke in Tampermonkey auf **„Installieren“** und lade den Rettungssimulator neu.
+
+Updates kommen automatisch über Tampermonkey.
+
+## Funktionen
+
+Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links neben deinem Namen ein Symbol, das das **Kontrollzentrum** öffnet.
+
+**Leitstelle**
+- **Fahrzeug-Statusleiste:** Zähler S1–S8 über den Wachen. Ein Klick filtert die Wachenliste nach diesem Status.
+- **Einsatz-Countdown:** Restzeit neben laufenden Einsätzen.
+- **Einsatzfarben:** Farbiger Rand nach Einsatzart (Brand, THL, Rettungsdienst, Polizei).
+- **Einsatzinfos:** Mögliche Vergütung direkt in der Einsatzliste.
+- **Wachen-Notizen:** Eigene Notizen an jeder Wache.
+- **Personal:** Vorhandenes und benötigtes Personal pro Wache.
+- **Tagesleiste:** Eigene Einsätze, freie Fahrzeuge und Tagesverdienst in der Kopfzeile.
+- **Reiter-Zähler:** Neue und gesamte Einsätze an den Reitern „Einsätze“ und „Freigaben“.
+
+**Alarme**
+- Ton bei Sprechwunsch (S5) und bei neuem Anruf, blinkender Tab-Titel, Desktop-Benachrichtigung.
+
+**Einsatzfenster**
+- **Einsatz-Check:** Benötigte Fahrzeuge, was schon vor Ort, unterwegs oder ausgewählt ist, dazu Vergütung und Dauer.
+- **Listenfilter:** „Nur freie“, „Nur benötigte“ und ein Umkreis in km.
+- **Hotkeys (frei belegbar):** Alarmieren, Freigeben, Anlegen. Mit Zusatztaste jeweils auch „& Schließen“ bzw. „& öffnen“.
+- **Stichwort fokussieren:** Beim Anlegen eines Einsatzes steht der Cursor sofort im Einsatzstichwort.
+
+## Datenschutz
+
+Alle Einstellungen und Notizen bleiben lokal in deinem Browser. Das Skript spricht nur mit dem Rettungssimulator selbst.
+
+## Für Entwickler
+
+```
+node build.js <github-benutzer> [repo-name] [autor]
+```
+
+Der Befehl baut `resi-helfer.user.js` aus `resi-helper.js`. Für ein Update erhöhst du `VERSION` in `resi-helper.js`, baust neu und lädst die Datei hoch.
+
+Zum Entwickeln gibt es einen Lader mit lokalem Server: `node server.js` starten und `resi-helper-loader.user.js` in Tampermonkey installieren. Dann reicht nach jeder Änderung ein F5 im Spiel.
