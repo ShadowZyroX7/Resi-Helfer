@@ -24,6 +24,9 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 - **Tagesleiste:** Eigene Einsätze, freie Fahrzeuge und Tagesverdienst in der Kopfzeile.
 - **Reiter-Zähler:** Neue und gesamte Einsätze an den Reitern „Einsätze“ und „Freigaben“.
 
+**Statistik**
+- Auswertung nach Tag, Woche, Monat, Jahr und gesamt – direkt aus dem Münzverlauf des Spiels: Verdienst, Ausgaben, Bilanz, Einsätze, Ø pro Einsatz, Diagramm, häufigste Einsätze und Ausgaben nach Art.
+
 **Alarme**
 - Ton bei Sprechwunsch (S5) und bei neuem Anruf, blinkender Tab-Titel, Desktop-Benachrichtigung.
 

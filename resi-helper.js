@@ -484,7 +484,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.8.0';
+  const VERSION = '0.9.0';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
@@ -612,6 +612,7 @@
       </div>
       <div class="rh-m-links">
         <button data-open="modules"><span>▦</span> Module</button>
+        <button data-open="stats"><span>▥</span> Statistik</button>
         <button data-open="settings"><span>⚙</span> Einstellungen</button>
       </div>`;
   }
@@ -978,10 +979,47 @@
     #rh-cc .rh-btn:hover { border-color:#fff; color:#fff; }
     #rh-cc .rh-btn.rh-danger { border-color:#DB1111; color:#DB1111; }
     #rh-cc .rh-btn.rh-danger:hover { background:#DB1111; color:#fff; }
+    #rh-cc .rh-btn[disabled] { opacity:.5; cursor:default; }
+
+    /* ---- Statistik ---- */
+    #rh-cc .rh-st-top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+    #rh-cc .rh-st-tabs { display:flex; gap:6px; flex-wrap:wrap; }
+    #rh-cc .rh-st-period { margin-left:auto; display:flex; align-items:center; gap:10px; font-size:14px; }
+    #rh-cc .rh-st-arrow { width:28px; height:28px; border-radius:100px; border:2px solid #b1b1b1; background:transparent; color:#b1b1b1;
+      font:700 16px/1 Arial, sans-serif; cursor:pointer; display:grid; place-items:center; padding:0; }
+    #rh-cc .rh-st-arrow:hover:not([disabled]) { border-color:#fff; color:#fff; }
+    #rh-cc .rh-st-arrow[disabled] { opacity:.3; cursor:default; }
+    #rh-cc .rh-st-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(175px,1fr)); gap:12px; margin-bottom:14px; }
+    #rh-cc .rh-st-kpi { background:#21242b; border-radius:12.5px; padding:12px 14px; }
+    #rh-cc .rh-st-kpi small { color:#b1b1b1; font-size:12px; }
+    #rh-cc .rh-st-kpi b { display:block; margin:2px 0 3px; font-size:23px; font-weight:700; font-variant-numeric:tabular-nums; }
+    #rh-cc .rh-st-kpi em { font-style:normal; font-size:11.5px; color:#b1b1b1; }
+    #rh-cc .rh-pos { color:#28a745; } #rh-cc .rh-neg { color:#ff4d4d; }
+    #rh-cc .rh-st-card { background:#21242b; border-radius:12.5px; padding:12px 14px; margin-bottom:14px; min-width:0; }
+    #rh-cc .rh-st-card h4 { margin:0 0 10px; font-size:13px; font-weight:700; color:#fff; }
+    #rh-cc .rh-st-chart { display:flex; align-items:stretch; gap:3px; height:160px; }
+    #rh-cc .rh-st-bar { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; cursor:default; }
+    #rh-cc .rh-st-bar i { display:block; width:100%; max-width:36px; background:#28a745; border-radius:4px 4px 0 0; transition:height .25s; }
+    #rh-cc .rh-st-bar.rh-zero i { background:#3c414b; }
+    #rh-cc .rh-st-bar.rh-now i { background:#3ddc63; box-shadow:0 0 0 2px rgba(61,220,99,.25); }
+    #rh-cc .rh-st-bar:hover i { filter:brightness(1.2); }
+    #rh-cc .rh-st-bar span { margin-top:5px; font-size:10.5px; color:#b1b1b1; white-space:nowrap; }
+    #rh-cc .rh-st-cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    @media (max-width: 900px) { #rh-cc .rh-st-cols { grid-template-columns:1fr; } }
+    #rh-cc .rh-st-li { display:flex; align-items:center; gap:10px; padding:6px 0; font-size:12.5px; }
+    #rh-cc .rh-st-li + .rh-st-li { border-top:1px solid rgba(255,255,255,.06); }
+    #rh-cc .rh-st-name { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #rh-cc .rh-st-n { color:#b1b1b1; font-variant-numeric:tabular-nums; }
+    #rh-cc .rh-st-li b { min-width:70px; text-align:right; font-variant-numeric:tabular-nums; }
+    #rh-cc .rh-st-empty { color:#b1b1b1; font-size:12px; padding:6px 0; }
+    #rh-cc .rh-st-loading { background:#21242b; border-radius:12.5px; padding:40px 20px; text-align:center; color:#fff; }
+    #rh-cc .rh-st-loading small { color:#b1b1b1; }
+    #rh-cc .rh-st-foot { display:flex; align-items:center; gap:12px; justify-content:space-between; font-size:11.5px; color:#b1b1b1; }
   `;
   document.head.appendChild(ccCss);
 
   const SETTINGS_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
+  const STATS_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V12M10 20V6M16 20v-9M22 20H2"/></svg>';
   const GRID_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
   const secIcon = k => `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${MOD_ICONS[k]}</svg>`;
 
@@ -999,6 +1037,7 @@
         <aside class="rh-cc-side">
           <div class="rh-cc-brand"><div class="rh-cc-logo">${ICON}</div><div><b>ReSi-Helfer</b><small>Kontrollzentrum</small></div></div>
           <div class="rh-cc-nav" data-page="modules">${GRID_ICON}<span>Module</span><span class="rh-cc-count"></span></div>
+          <div class="rh-cc-nav" data-page="stats">${STATS_ICON}<span>Statistik</span></div>
           <div class="rh-cc-nav" data-page="settings">${SETTINGS_ICON}<span>Einstellungen</span></div>
           <div class="rh-cc-sidefoot"><div class="rh-cc-active"></div><div class="rh-cc-meter"><i></i></div>Version ${VERSION}</div>
         </aside>
@@ -1061,6 +1100,8 @@
             <div><h4>${name}</h4><p>${desc}</p></div>
             <span class="rh-cc-state">${settings[k] ? 'Aktiv' : 'Aus'}</span>
           </div>`).join('')}</div>`).join('') || '<div class="rh-cc-empty">Kein Modul gefunden.</div>';
+    } else if (ccPage === 'stats') {
+      renderStats(body, h2, p);
     } else {
       h2.textContent = 'Einstellungen';
       p.textContent = 'Feinschliff für die Module, Töne und deine Daten.';
@@ -1121,6 +1162,206 @@
     body.scrollTop = scroll;
   }
 
+  // =====================================================================
+  // Statistik aus dem Münzverlauf des Spiels (transactions/muenzen)
+  // =====================================================================
+  const TX_KEY = 'resiHelfer.tx';
+  let tx = JSON.parse(localStorage.getItem(TX_KEY) || 'null') || { rows: [] }; // rows: [zeit, wert, text], neueste zuerst
+  let txLoading = null, txProgress = '', txError = '', txLastAttempt = 0;
+  let statRange = 'week', statShift = 0;
+  const nf = n => Number(n).toLocaleString('de-DE');
+
+  // "19:27 24.11.26" -> Zeitstempel
+  const parseTxTime = s => {
+    const m = s.match(/(\d{1,2}):(\d{2})\s+(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
+    if (!m) return NaN;
+    const y = +m[5] < 100 ? 2000 + +m[5] : +m[5];
+    return new Date(y, m[4] - 1, m[3], m[1], m[2]).getTime();
+  };
+  const parseTxValue = s => +s.replace(/[^\d-]/g, '') || 0; // "-20.000" -> -20000
+
+  async function fetchTxPage(page) {
+    const html = await fetch('transactions/muenzen/' + page).then(r => r.text());
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const rows = [...doc.querySelectorAll('tr')].map(r => [...r.cells]).filter(c => c.length >= 4)
+      .map(c => [parseTxTime(c[3].textContent), parseTxValue(c[1].textContent), c[2].textContent.replace(/\s+/g, ' ').trim()])
+      .filter(r => !isNaN(r[0]));
+    const pages = Math.max(page, ...[...doc.querySelectorAll('a[href*="transactions/muenzen/"]')]
+      .map(a => +(a.getAttribute('href').match(/muenzen\/(\d+)/)?.[1] || 0)));
+    return { rows, pages };
+  }
+
+  const renderCenterIfStats = () => { if (ccPage === 'stats' && document.getElementById('rh-cc')) renderCenter(); };
+
+  // Lädt nur neue Seiten nach – bekannte Einträge bleiben im Browser gespeichert
+  function loadTx() {
+    if (txLoading) return txLoading;
+    txError = '';
+    txLastAttempt = Date.now();
+    txLoading = (async () => {
+      const newest = tx.rows[0]?.[0] ?? -Infinity;
+      const fresh = [];
+      let page = 1, pages = 1;
+      while (page <= pages) {
+        txProgress = `Lade Münzverlauf … Seite ${page}${pages > 1 ? ` von ${pages}` : ''}`;
+        renderCenterIfStats();
+        const res = await fetchTxPage(page);
+        pages = res.pages;
+        if (!res.rows.length) break;
+        fresh.push(...res.rows.filter(r => r[0] >= newest));
+        if (res.rows[res.rows.length - 1][0] < newest) break; // ab hier kennen wir alles schon
+        page++;
+        await new Promise(r => setTimeout(r, 120)); // Server schonen
+      }
+      tx.rows = [...fresh, ...tx.rows.filter(r => r[0] < newest)];
+      tx.updated = Date.now();
+      localStorage.setItem(TX_KEY, JSON.stringify(tx));
+    })()
+      .catch(e => { txError = 'Der Münzverlauf konnte nicht geladen werden.'; console.warn('[ReSi-Helfer]', e); })
+      .finally(() => { txLoading = null; txProgress = ''; renderCenterIfStats(); });
+    return txLoading;
+  }
+
+  // ---------- Zeiträume ----------
+  const DAY = 86400000;
+  const WD = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  const MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+  const MON_LONG = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+  const dmy = d => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`;
+  function isoWeek(d) {
+    const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+    return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / DAY + 1) / 7);
+  }
+
+  // liefert Start/Ende, Beschriftung und die Balken (Stunden, Tage oder Monate)
+  function statPeriod(range, shift) {
+    const now = new Date(), y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+    const buckets = [];
+    let start, end, label, unit;
+    if (range === 'day') {
+      start = new Date(y, m, d + shift); end = new Date(y, m, d + shift + 1);
+      label = shift === 0 ? 'Heute' : shift === -1 ? 'Gestern' : `${WD[(start.getDay() + 6) % 7]}, ${dmy(start)}${start.getFullYear()}`;
+      unit = 'Stunde';
+      for (let h = 0; h < 24; h++) buckets.push({ s: +start + h * 3600000, e: +start + (h + 1) * 3600000, l: String(h) });
+    } else if (range === 'week') {
+      const dow = (now.getDay() + 6) % 7;
+      start = new Date(y, m, d - dow + 7 * shift); end = new Date(y, m, d - dow + 7 * shift + 7);
+      label = `KW ${isoWeek(start)} · ${dmy(start)} – ${dmy(new Date(+end - 1))}`;
+      unit = 'Tag';
+      for (let i = 0; i < 7; i++) { const s = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i); buckets.push({ s: +s, e: +new Date(s.getFullYear(), s.getMonth(), s.getDate() + 1), l: WD[i] }); }
+    } else if (range === 'month') {
+      start = new Date(y, m + shift, 1); end = new Date(y, m + shift + 1, 1);
+      label = `${MON_LONG[start.getMonth()]} ${start.getFullYear()}`;
+      unit = 'Tag';
+      for (let s = new Date(start); s < end; s = new Date(s.getFullYear(), s.getMonth(), s.getDate() + 1))
+        buckets.push({ s: +s, e: +new Date(s.getFullYear(), s.getMonth(), s.getDate() + 1), l: String(s.getDate()) });
+    } else if (range === 'year') {
+      start = new Date(y + shift, 0, 1); end = new Date(y + shift + 1, 0, 1);
+      label = String(start.getFullYear());
+      unit = 'Monat';
+      for (let i = 0; i < 12; i++) buckets.push({ s: +new Date(start.getFullYear(), i, 1), e: +new Date(start.getFullYear(), i + 1, 1), l: MON[i] });
+    } else { // gesamt
+      const first = tx.rows.length ? new Date(tx.rows[tx.rows.length - 1][0]) : now;
+      start = new Date(first.getFullYear(), first.getMonth(), 1); end = new Date(y, m + 1, 1);
+      label = `Seit ${dmy(first)}${first.getFullYear()}`;
+      unit = 'Monat';
+      for (let s = new Date(start); s < end; s = new Date(s.getFullYear(), s.getMonth() + 1, 1))
+        buckets.push({ s: +s, e: +new Date(s.getFullYear(), s.getMonth() + 1, 1), l: `${MON[s.getMonth()]} ${String(s.getFullYear()).slice(2)}` });
+    }
+    return { start: +start, end: +end, label, unit, buckets };
+  }
+
+  const MISSION_RE = /^Einsatz (.+?) erfolgreich abgeschlossen/;
+  function expenseGroup(text) {
+    if (/^Fahrzeug/i.test(text)) return 'Fahrzeuge';
+    if (/^Gebäude|Ausbau|Erweiterung/i.test(text)) return 'Gebäude & Ausbauten';
+    if (/Stellplatz/i.test(text)) return 'Stellplätze';
+    if (/Lehrgang|Ausbildung/i.test(text)) return 'Lehrgänge';
+    if (/Personal|Werb/i.test(text)) return 'Personal';
+    return 'Sonstiges';
+  }
+
+  function renderStats(body, h2, p) {
+    h2.textContent = 'Statistik';
+    p.textContent = 'Deine Einnahmen und Einsätze – direkt aus dem Münzverlauf des Spiels.';
+
+    // automatisch aktualisieren (höchstens einmal pro Minute)
+    if (!txLoading && Date.now() - txLastAttempt > 60000) loadTx();
+
+    const RANGES = [['day', 'Tag'], ['week', 'Woche'], ['month', 'Monat'], ['year', 'Jahr'], ['all', 'Gesamt']];
+    const per = statPeriod(statRange, statShift);
+    const rows = tx.rows.filter(r => r[0] >= per.start && r[0] < per.end);
+    const income = rows.filter(r => r[1] > 0), expenses = rows.filter(r => r[1] < 0);
+    const missions = income.filter(r => MISSION_RE.test(r[2]));
+    const earned = income.reduce((s, r) => s + r[1], 0);
+    const spent = Math.abs(expenses.reduce((s, r) => s + r[1], 0)); // abs: sonst "-0" ohne Ausgaben
+    const missionSum = missions.reduce((s, r) => s + r[1], 0);
+
+    const bars = per.buckets.map(b => {
+      const inB = income.filter(r => r[0] >= b.s && r[0] < b.e);
+      return { ...b, v: inB.reduce((s, r) => s + r[1], 0), n: inB.filter(r => MISSION_RE.test(r[2])).length };
+    });
+    const max = Math.max(1, ...bars.map(b => b.v));
+    const best = bars.reduce((a, b) => (b.v > a.v ? b : a), { v: 0 });
+    const step = bars.length > 16 ? Math.ceil(bars.length / 12) : 1;
+    const nowTs = Date.now();
+
+    const types = {};
+    missions.forEach(r => { const n = r[2].match(MISSION_RE)[1]; (types[n] ||= { n: 0, v: 0 }); types[n].n++; types[n].v += r[1]; });
+    const topTypes = Object.entries(types).sort((a, b) => b[1].n - a[1].n || b[1].v - a[1].v).slice(0, 6);
+    const groups = {};
+    expenses.forEach(r => { const g = expenseGroup(r[2]); (groups[g] ||= { n: 0, v: 0 }); groups[g].n++; groups[g].v -= r[1]; });
+    const topGroups = Object.entries(groups).sort((a, b) => b[1].v - a[1].v);
+
+    const first = tx.rows.length ? new Date(tx.rows[tx.rows.length - 1][0]) : null;
+    const status = txProgress || txError || (tx.updated
+      ? `Stand ${new Date(tx.updated).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · ${nf(tx.rows.length)} Buchungen${first ? ` seit ${dmy(first)}${first.getFullYear()}` : ''}`
+      : 'Noch nicht geladen');
+
+    const list = (items, empty, cls) => items.length ? items.map(([name, d]) => `
+        <div class="rh-st-li"><span class="rh-st-name" title="${name}">${name}</span>
+          <span class="rh-st-n">${d.n}×</span><b class="${cls}">${cls === 'rh-neg' ? '−' : '+'}${nf(d.v)}</b></div>`).join('')
+      : `<div class="rh-st-empty">${empty}</div>`;
+
+    body.innerHTML = `
+      <div class="rh-st-top">
+        <div class="rh-st-tabs">${RANGES.map(([k, l]) => `<span class="rh-cc-chip${statRange === k ? ' rh-act' : ''}" data-range="${k}">${l}</span>`).join('')}</div>
+        <div class="rh-st-period">
+          ${statRange !== 'all' ? `<button class="rh-st-arrow" data-shift="-1" title="Zurück">‹</button>` : ''}
+          <b>${per.label}</b>
+          ${statRange !== 'all' ? `<button class="rh-st-arrow" data-shift="1" title="Weiter" ${statShift >= 0 ? 'disabled' : ''}>›</button>` : ''}
+        </div>
+      </div>
+
+      ${!tx.rows.length && txLoading ? `<div class="rh-st-loading">${txProgress || 'Lade Münzverlauf …'}<br><small>Beim ersten Mal wird der gesamte Verlauf geladen, danach nur noch Neues.</small></div>` : `
+      <div class="rh-st-kpis">
+        <div class="rh-st-kpi"><small>Verdient</small><b class="rh-pos">+${nf(earned)}</b><em>davon Einsätze: ${nf(missionSum)}</em></div>
+        <div class="rh-st-kpi"><small>Ausgegeben</small><b class="${spent ? 'rh-neg' : ''}">${spent ? '−' : ''}${nf(spent)}</b><em>Bilanz: <span class="${earned - spent >= 0 ? 'rh-pos' : 'rh-neg'}">${earned - spent >= 0 ? '+' : '−'}${nf(Math.abs(earned - spent))}</span></em></div>
+        <div class="rh-st-kpi"><small>Einsätze abgeschlossen</small><b>${nf(missions.length)}</b><em>${best.v ? `Bester ${per.unit}: ${best.l} (+${nf(best.v)})` : '&nbsp;'}</em></div>
+        <div class="rh-st-kpi"><small>Ø pro Einsatz</small><b>${missions.length ? nf(Math.round(missionSum / missions.length)) : '–'}</b><em>Münzen</em></div>
+      </div>
+
+      <div class="rh-st-card">
+        <h4>Verdienst pro ${per.unit}</h4>
+        <div class="rh-st-chart">
+          ${bars.map((b, i) => `
+            <div class="rh-st-bar${b.v ? '' : ' rh-zero'}${nowTs >= b.s && nowTs < b.e ? ' rh-now' : ''}" title="${b.l}: +${nf(b.v)} Münzen · ${b.n} Einsätze">
+              <i style="height:${Math.max(2, (b.v / max) * 100)}%"></i>
+              <span>${i % step === 0 ? b.l : '&nbsp;'}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <div class="rh-st-cols">
+        <div class="rh-st-card"><h4>Häufigste Einsätze</h4>${list(topTypes, 'Keine Einsätze in diesem Zeitraum', 'rh-pos')}</div>
+        <div class="rh-st-card"><h4>Ausgaben</h4>${list(topGroups, 'Keine Ausgaben in diesem Zeitraum', 'rh-neg')}</div>
+      </div>`}
+
+      <div class="rh-st-foot"><span>${status}</span>
+        <button class="rh-btn" data-act="txReload" ${txLoading ? 'disabled' : ''}>${txLoading ? 'Lädt …' : 'Aktualisieren'}</button></div>`;
+  }
+
   function afterChange() {
     saveSettings();
     applySettings();
@@ -1128,6 +1369,11 @@
   }
 
   async function onCenterClick(e) {
+    const range = e.target.closest('[data-range]');
+    if (range) { statRange = range.dataset.range; statShift = 0; return renderCenter(); }
+    const shift = e.target.closest('[data-shift]');
+    if (shift) { if (!shift.disabled) statShift = Math.min(0, statShift + +shift.dataset.shift); return renderCenter(); }
+    if (e.target.closest('[data-act="txReload"]')) { loadTx(); return; }
     const chip = e.target.closest('[data-filter]');
     if (chip) { ccFilter = chip.dataset.filter; return renderCenter(); }
     const test = e.target.closest('[data-test]')?.dataset.test;
@@ -1169,7 +1415,7 @@
     }
     if (act === 'reset') {
       if (!confirm('Alle ReSi-Helfer-Einstellungen, Wachen-Notizen und den Tageszähler löschen?')) return;
-      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY].forEach(k => localStorage.removeItem(k));
+      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY, TX_KEY].forEach(k => localStorage.removeItem(k));
       location.reload();
       return;
     }
