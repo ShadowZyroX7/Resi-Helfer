@@ -36,6 +36,9 @@
     missionSort: 'default',  // default | unalarmed | time | credits | distance
     sharedMine: true,        // Freigaben: Symbol mit Anzahl eigener alarmierter Fahrzeuge
     sharedEnough: 4,         // ab so vielen eigenen Fahrzeugen gilt eine Freigabe als versorgt
+    mapBorders: true,        // Karte: Grenzen anzeigen
+    mapDistricts: true,      //   … Landkreise
+    mapStates: true,         //   … Bundesländer
     headerStats: true,       // Statistik-Leiste in der Kopfzeile
     countdownSoon: 30,       // Countdown wird ab so vielen Sekunden grün
     statusShowAll: false,    // Statusleiste: auch leere Status 5–8 zeigen
@@ -638,7 +641,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.9.6';
+  const VERSION = '0.10.0';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
@@ -647,6 +650,7 @@
       ['missionInfo',   'Einsatzinfos',          'Vergütung in der Einsatzliste'],
       ['missionSortBar','Einsatzliste sortieren', 'Unalarmierte zuerst, Restzeit, Vergütung oder Entfernung'],
       ['sharedMine',    'Eigene Fahrzeuge bei Freigaben', 'Zeigt, wie viele deiner Fahrzeuge bei einer Freigabe sind'],
+      ['mapBorders',    'Grenzen auf der Karte', 'Landkreis- und Bundeslandgrenzen einblenden'],
       ['buildingNotes', 'Wachen-Notizen',        'Eigene Notizen an jeder Wache'],
       ['headerStats',   'Tagesleiste',           'Einsätze, freie Fahrzeuge und Tagesverdienst oben'],
       ['tabCounters',   'Reiter-Zähler',         'Neue und gesamte Einsätze an „Einsätze“ und „Freigaben“'],
@@ -712,6 +716,8 @@
     #rh-menu .rh-m-links button { border:2px solid #b1b1b1; background:transparent; color:#b1b1b1; border-radius:100px; font:700 12px Arial, sans-serif; padding:6px 0; }
     #rh-menu .rh-m-links button:hover { border-color:#fff; color:#fff; }
     #rh-menu .rh-m-links span { color:inherit; }
+    #rh-menu .rh-m-links { flex-wrap:wrap; }
+    #rh-menu .rh-m-links button { flex:1 1 calc(50% - 6px); }
 
     /* ---- Update-Hinweis ---- */
     #rh-navbtn .rh-dot { right:auto; left:-4px; }  /* Sprechwunsch-Punkt links, Update-Zeichen rechts */
@@ -770,6 +776,7 @@
     checkS5();
     renderHeaderStats();
     renderTabCounters();
+    renderBorders();
     loadOwnVehicles();
     if (settings.missionSort === 'distance' && !buildingSpots.length) loadBuildingSpots();
     if (settings.personnel && !buildingInfo.size) loadBuildings(); else decoratePersonnel();
@@ -791,6 +798,7 @@
       <div class="rh-m-links">
         <button data-open="modules"><span>▦</span> Module</button>
         <button data-open="stats"><span>▥</span> Statistik</button>
+        <button data-open="realbau"><span>⌂</span> Realbau</button>
         <button data-open="settings"><span>⚙</span> Einstellungen</button>
       </div>`;
   }
@@ -1053,6 +1061,61 @@
   renderHeaderStats();
 
   // =====================================================================
+  // Karte: Landkreis- und Bundeslandgrenzen
+  // Daten: github.com/isellsoap/deutschlandGeoJSON (Quelle: DIVA-GIS), im Browser zwischengespeichert
+  // =====================================================================
+  const GEO_BASE = 'https://raw.githubusercontent.com/isellsoap/deutschlandGeoJSON/main/';
+  const GEO_URLS = {
+    districts: GEO_BASE + '4_kreise/4_niedrig.geo.json',      // 434 Landkreise / kreisfreie Städte
+    states:    GEO_BASE + '2_bundeslaender/3_mittel.geo.json', // 16 Bundesländer
+  };
+  const GEO_STYLE = {
+    districts: { color: '#ffffff', weight: 1.3, opacity: 0.6, dashArray: '5 5', fill: false },
+    states:    { color: '#FFB300', weight: 2.6, opacity: 0.9, fill: false },
+  };
+  const geoLayers = {};
+  const geoLoading = {};
+
+  async function loadGeo(url) {
+    try { // Cache-Speicher des Browsers, damit die Daten nicht bei jedem Laden neu kommen
+      const cache = await caches.open('resi-helfer-geo');
+      let res = await cache.match(url);
+      if (!res) { res = await fetch(url); if (res.ok) await cache.put(url, res.clone()); }
+      return await res.json();
+    } catch (e) {
+      return fetch(url).then(r => r.json());
+    }
+  }
+
+  async function renderBorders() {
+    const map = window.mymap, Lf = window.L;
+    if (!map || !Lf?.geoJSON) return;
+    if (!map.getPane('rhBorders')) {
+      const pane = map.createPane('rhBorders');
+      pane.style.zIndex = 390;          // über der Karte, unter Fahrzeugen und Einsätzen
+      pane.style.pointerEvents = 'none'; // Klicks gehen weiter an die Karte
+    }
+    for (const kind of ['districts', 'states']) {
+      const on = settings.mapBorders && settings[kind === 'states' ? 'mapStates' : 'mapDistricts'];
+      if (on && !geoLayers[kind] && !geoLoading[kind]) {
+        geoLoading[kind] = loadGeo(GEO_URLS[kind])
+          .then(data => {
+            geoLayers[kind] = Lf.geoJSON(data, { pane: 'rhBorders', interactive: false, style: GEO_STYLE[kind] });
+            renderBorders();
+          })
+          .catch(e => console.warn('[ReSi-Helfer] Grenzen nicht geladen', e))
+          .finally(() => { delete geoLoading[kind]; });
+        continue;
+      }
+      const layer = geoLayers[kind];
+      if (!layer) continue;
+      if (on && !map.hasLayer(layer)) layer.addTo(map);
+      if (!on && map.hasLayer(layer)) map.removeLayer(layer);
+    }
+  }
+  renderBorders();
+
+  // =====================================================================
   // Kontrollzentrum: Module + Einstellungen (großes Fenster)
   // =====================================================================
   const MOD_ICONS = {
@@ -1068,6 +1131,7 @@
     callDesktop:   '<path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
     missionBox:    '<path d="M10 6h10M10 12h10M10 18h10"/><path d="M3.5 6l1.5 1.5L7.5 5M3.5 12l1.5 1.5L7.5 11M3.5 18l1.5 1.5L7.5 17"/>',
     listBar:       '<path d="M3 5h18l-7 8v6l-4-2v-4z"/>',
+    mapBorders:    '<path d="M9 3L3 6v15l6-3 6 3 6-3V3l-6 3z"/><path d="M9 3v15M15 6v15"/>',
     missionSortBar:'<path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/>',
     sharedMine:    '<path d="M3 16V8h11v8M14 11h4l3 3v2h-7"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 5h4"/>',
     tabCounters:   '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M9 7V4h6v3"/>',
@@ -1239,10 +1303,43 @@
     #rh-cc .rh-st-loading { background:#21242b; border-radius:12.5px; padding:40px 20px; text-align:center; color:#fff; }
     #rh-cc .rh-st-loading small { color:#b1b1b1; }
     #rh-cc .rh-st-foot { display:flex; align-items:center; gap:12px; justify-content:space-between; font-size:11.5px; color:#b1b1b1; }
+
+    /* ---- Realbau ---- */
+    #rh-cc .rh-rb-st { background:#21242b; border-radius:12.5px; margin-bottom:12px; overflow:hidden; }
+    #rh-cc .rh-rb-head { display:flex; align-items:center; gap:12px; padding:8px 14px; background:#DB1111; cursor:pointer; user-select:none; }
+    #rh-cc .rh-rb-head b { font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #rh-cc .rh-rb-prog { margin-left:auto; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    #rh-cc .rh-rb-bar { width:110px; height:6px; border-radius:3px; background:rgba(0,0,0,.3); overflow:hidden; flex:none; }
+    #rh-cc .rh-rb-bar i { display:block; height:100%; background:#fff; }
+    #rh-cc .rh-rb-headcost { font-size:11.5px; background:rgba(0,0,0,.25); border-radius:100px; padding:1px 8px; white-space:nowrap; }
+    #rh-cc .rh-rb-head .rh-caret { color:#fff; transition:transform .15s; transform:rotate(-90deg); }
+    #rh-cc .rh-rb-st.rh-open .rh-caret { transform:none; }
+    #rh-cc .rh-rb-body { padding:6px 14px 12px; }
+    #rh-cc .rh-rb-row { display:grid; grid-template-columns:minmax(0,1fr) 70px 64px 110px 80px; align-items:center; gap:10px; padding:6px 0; font-size:12.5px; }
+    #rh-cc .rh-rb-row + .rh-rb-row { border-top:1px solid rgba(255,255,255,.06); }
+    #rh-cc .rh-rb-th { color:#b1b1b1; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+    #rh-cc .rh-rb-name { min-width:0; }
+    #rh-cc .rh-rb-name b { display:block; }
+    #rh-cc .rh-rb-name small { display:block; color:#b1b1b1; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #rh-cc .rh-rb-count { font-variant-numeric:tabular-nums; font-weight:700; text-align:center; }
+    #rh-cc .rh-rb-step { display:flex; gap:4px; }
+    #rh-cc .rh-rb-step button { width:26px; height:26px; border-radius:100px; border:2px solid #b1b1b1; background:transparent; color:#b1b1b1;
+      font:700 14px/1 Arial, sans-serif; cursor:pointer; padding:0; }
+    #rh-cc .rh-rb-step button:hover:not([disabled]) { border-color:#fff; color:#fff; }
+    #rh-cc .rh-rb-step button[disabled] { opacity:.3; cursor:default; }
+    #rh-cc .rh-rb-chip { display:inline-block; padding:1px 9px; border-radius:100px; font-size:11.5px; font-weight:700; white-space:nowrap; }
+    #rh-cc .rh-rb-green { background:#28a745; color:#fff; }
+    #rh-cc .rh-rb-red { background:#DB1111; color:#fff; }
+    #rh-cc .rh-rb-gray { background:#3c414b; color:#ddd; }
+    #rh-cc .rh-rb-cost { text-align:right; color:#ff4d4d; font-variant-numeric:tabular-nums; }
+    #rh-cc .rh-rb-add { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; padding-top:10px; border-top:1px solid rgba(255,255,255,.08); }
+    #rh-cc .rh-rb-add select { flex:1 1 220px; min-width:0; background:#282c35; color:#fff; border:2px solid #b1b1b1; border-radius:100px;
+      padding:4px 12px; font:700 12px Arial, sans-serif; outline:none; }
   `;
   document.head.appendChild(ccCss);
 
   const SETTINGS_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
+  const REALBAU_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-6h6v6"/></svg>';
   const STATS_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V12M10 20V6M16 20v-9M22 20H2"/></svg>';
   const GRID_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
   const secIcon = k => `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${MOD_ICONS[k]}</svg>`;
@@ -1262,6 +1359,7 @@
           <div class="rh-cc-brand"><div class="rh-cc-logo">${ICON}</div><div><b>ReSi-Helfer</b><small>Kontrollzentrum</small></div></div>
           <div class="rh-cc-nav" data-page="modules">${GRID_ICON}<span>Module</span><span class="rh-cc-count"></span></div>
           <div class="rh-cc-nav" data-page="stats">${STATS_ICON}<span>Statistik</span></div>
+          <div class="rh-cc-nav" data-page="realbau">${REALBAU_ICON}<span>Realbau</span></div>
           <div class="rh-cc-nav" data-page="settings">${SETTINGS_ICON}<span>Einstellungen</span></div>
           <div class="rh-cc-sidefoot"><div class="rh-cc-updbox"></div><div class="rh-cc-active"></div><div class="rh-cc-meter"><i></i></div>Version ${VERSION}</div>
         </aside>
@@ -1331,6 +1429,8 @@
           </div>`).join('')}</div>`).join('') || '<div class="rh-cc-empty">Kein Modul gefunden.</div>';
     } else if (ccPage === 'stats') {
       renderStats(body, h2, p);
+    } else if (ccPage === 'realbau') {
+      renderRealbau(body, h2, p);
     } else {
       h2.textContent = 'Einstellungen';
       p.textContent = 'Feinschliff für die Module, Töne und deine Daten.';
@@ -1347,6 +1447,8 @@
 
         <div class="rh-cc-sec"><h3>${secIcon('statusbar')} Leitstelle</h3><div class="rh-cc-rows">
           ${sw('statusShowAll', 'Alle Status in der Statusleiste', 'Auch leere Status 5–8 anzeigen')}
+          ${sw('mapDistricts', 'Landkreisgrenzen auf der Karte', 'Weiße gestrichelte Linien (Modul „Grenzen auf der Karte“ muss an sein)')}
+          ${sw('mapStates', 'Bundeslandgrenzen auf der Karte', 'Gelbe Linien (Modul „Grenzen auf der Karte“ muss an sein)')}
           <div class="rh-cc-row"><div class="rh-cc-lbl"><b>Countdown hervorheben</b><small>Restzeit wird grün, wenn weniger als so viele Sekunden übrig sind</small></div>
             <input type="number" min="0" max="600" step="5" data-set="countdownSoon" value="${settings.countdownSoon}"></div>
           <div class="rh-cc-row"><div class="rh-cc-lbl"><b>Freigabe gilt als versorgt ab</b>
@@ -1598,6 +1700,179 @@
         <button class="rh-btn" data-act="txReload" ${txLoading ? 'disabled' : ''}>${txLoading ? 'Lädt …' : 'Aktualisieren'}</button></div>`;
   }
 
+  // =====================================================================
+  // Realbau: Soll/Ist-Abgleich pro Wache
+  // =====================================================================
+  const RB_KEY = 'resiHelfer.realbau';
+  let realbau = JSON.parse(localStorage.getItem(RB_KEY) || '{}'); // { wachenId: { fahrzeugTypId: soll } }
+  const saveRealbau = () => localStorage.setItem(RB_KEY, JSON.stringify(realbau));
+  let rbBuildings = null, rbVehicles = null, rbLoading = null, rbError = '', rbLoaded = 0;
+  const rbCatalog = {};      // Gebäudetyp -> [{ id, name, task, coins }]
+  const rbOpen = new Set();  // aufgeklappte Wachen
+
+  // Fahrzeugkatalog aus dem Shop der Wache (nur lesen), je Gebäudetyp einen Tag zwischengespeichert
+  async function loadShop(building, force) {
+    const key = 'resiHelfer.shop.' + building.buildingType;
+    const cached = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!force && cached && Date.now() - cached.t < 86400000) return cached.list;
+    const html = await fetch('vehicleShop/' + building.userBuildingID).then(r => r.text());
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const list = [...doc.querySelectorAll('.element-card[vehicleid]')].map(c => {
+      const prices = [...c.textContent.replace(/\s+/g, ' ').matchAll(/([\d.]+)\s*Münzen/g)];
+      return {
+        id: +c.getAttribute('vehicleid'),
+        name: c.querySelector('.element-card-description-name')?.textContent.trim() || '?',
+        task: c.querySelector('.element-card-description-task')?.textContent.trim() || '',
+        coins: prices.length ? +prices[prices.length - 1][1].replace(/\./g, '') : 0, // letzter Treffer = Preis
+      };
+    });
+    const uniq = [...new Map(list.map(v => [v.id, v])).values()];
+    localStorage.setItem(key, JSON.stringify({ t: Date.now(), list: uniq }));
+    return uniq;
+  }
+
+  function loadRealbau(force) {
+    if (rbLoading) return rbLoading;
+    rbError = '';
+    rbLoading = (async () => {
+      const [buildings, vehicles] = await Promise.all([
+        fetch('/api/userBuildings').then(r => r.json()),
+        fetch('/api/userVehicles').then(r => r.json()),
+      ]);
+      rbBuildings = buildings;
+      rbVehicles = vehicles;
+      for (const b of buildings) {
+        if (rbCatalog[b.buildingType] && !force) continue;
+        try { rbCatalog[b.buildingType] = await loadShop(b, force); } catch (e) { rbCatalog[b.buildingType] = []; }
+      }
+      rbLoaded = Date.now();
+    })()
+      .catch(e => { rbError = 'Wachen und Fahrzeuge konnten nicht geladen werden.'; console.warn('[ReSi-Helfer]', e); })
+      .finally(() => { rbLoading = null; if (ccPage === 'realbau' && document.getElementById('rh-cc')) renderCenter(); });
+    return rbLoading;
+  }
+
+  // Ist-Bestand einer Wache: Fahrzeugtyp -> Anzahl
+  function rbIst(buildingId) {
+    const m = new Map();
+    (rbVehicles || []).forEach(v => { if (String(v.userBuildingID) === String(buildingId)) m.set(v.vehicleID, (m.get(v.vehicleID) || 0) + 1); });
+    return m;
+  }
+  // Auswertung einer Wache
+  function rbStation(b) {
+    const cat = rbCatalog[b.buildingType] || [];
+    const byId = new Map(cat.map(v => [v.id, v]));
+    const soll = realbau[b.userBuildingID] || {};
+    const ist = rbIst(b.userBuildingID);
+    const ids = [...new Set([...Object.keys(soll).map(Number), ...ist.keys()])];
+    const rows = ids.map(id => {
+      const s = +soll[id] || 0, i = ist.get(id) || 0, v = byId.get(id) || { id, name: `Typ ${id}`, task: '', coins: 0 };
+      return { ...v, s, i, missing: Math.max(0, s - i), extra: s ? Math.max(0, i - s) : 0 };
+    }).sort((a, b) => (b.s > 0) - (a.s > 0) || a.name.localeCompare(b.name, 'de'));
+    const sollSum = rows.reduce((t, r) => t + r.s, 0);
+    const done = rows.reduce((t, r) => t + Math.min(r.s, r.i), 0);
+    const cost = rows.reduce((t, r) => t + r.missing * r.coins, 0);
+    return { cat, rows, sollSum, done, cost, planned: sollSum > 0 };
+  }
+
+  function renderRealbau(body, h2, p) {
+    h2.textContent = 'Realbau';
+    p.textContent = 'Soll/Ist pro Wache: Trag ein, welche echten Fahrzeuge an der Wache stehen – das Skript zeigt, was noch fehlt.';
+    if (!rbLoading && Date.now() - rbLoaded > 60000) loadRealbau();
+    if (!rbBuildings) {
+      body.innerHTML = `<div class="rh-st-loading">${rbError || 'Lade Wachen, Fahrzeuge und Fahrzeugkatalog …'}</div>`;
+      return;
+    }
+    const stations = rbBuildings
+      .filter(b => (rbCatalog[b.buildingType] || []).length) // nur Gebäude mit Fahrzeugen
+      .map(b => ({ b, r: rbStation(b) }));
+    if (stations.length <= 3 && !rbOpen.size) stations.forEach(s => rbOpen.add(String(s.b.userBuildingID)));
+
+    const planned = stations.filter(s => s.r.planned);
+    const sollAll = planned.reduce((t, s) => t + s.r.sollSum, 0);
+    const doneAll = planned.reduce((t, s) => t + s.r.done, 0);
+    const costAll = planned.reduce((t, s) => t + s.r.cost, 0);
+    const complete = planned.filter(s => s.r.done >= s.r.sollSum).length;
+
+    const rowHtml = (b, r) => {
+      let state;
+      if (!r.s) state = `<span class="rh-rb-chip rh-rb-gray" title="Steht im Spiel, ist aber nicht im Soll">nicht im Soll</span>`;
+      else if (r.missing) state = `<span class="rh-rb-chip rh-rb-red">fehlt ${r.missing}</span>`;
+      else state = `<span class="rh-rb-chip rh-rb-green">✓${r.extra ? ` +${r.extra}` : ''}</span>`;
+      return `
+        <div class="rh-rb-row">
+          <div class="rh-rb-name"><b>${r.name}</b><small>${r.task}</small></div>
+          <div class="rh-rb-count" title="Ist / Soll">${r.i} / ${r.s}</div>
+          <div class="rh-rb-step">
+            <button data-rb-act="dec" data-b="${b.userBuildingID}" data-v="${r.id}" title="Soll verringern" ${r.s ? '' : 'disabled'}>−</button>
+            <button data-rb-act="inc" data-b="${b.userBuildingID}" data-v="${r.id}" title="Soll erhöhen">+</button>
+          </div>
+          <div class="rh-rb-state">${state}</div>
+          <div class="rh-rb-cost">${r.missing && r.coins ? `${nf(r.missing * r.coins)}` : ''}</div>
+        </div>`;
+    };
+
+    body.innerHTML = `
+      <div class="rh-st-kpis">
+        <div class="rh-st-kpi"><small>Fahrzeuge laut Soll</small><b>${doneAll} / ${sollAll}</b><em>${sollAll ? Math.round(doneAll / sollAll * 100) + ' % erreicht' : 'Noch kein Soll eingetragen'}</em></div>
+        <div class="rh-st-kpi"><small>Fehlen noch</small><b class="${sollAll - doneAll ? 'rh-neg' : 'rh-pos'}">${sollAll - doneAll}</b><em>Fahrzeuge</em></div>
+        <div class="rh-st-kpi"><small>Kosten für den Rest</small><b>${nf(costAll)}</b><em>Münzen (Shop-Preise)</em></div>
+        <div class="rh-st-kpi"><small>Wachen komplett</small><b>${complete} / ${planned.length}</b><em>${stations.length - planned.length ? `${stations.length - planned.length} ohne Soll` : '&nbsp;'}</em></div>
+      </div>
+      ${stations.map(({ b, r }) => {
+        const open = rbOpen.has(String(b.userBuildingID));
+        const pct = r.sollSum ? Math.round(r.done / r.sollSum * 100) : 0;
+        const options = r.cat.slice().sort((x, y) => x.name.localeCompare(y.name, 'de'))
+          .map(v => `<option value="${v.id}">${v.name}${v.task ? ' – ' + v.task : ''}${v.coins ? ` (${nf(v.coins)})` : ''}</option>`).join('');
+        return `
+        <div class="rh-rb-st${open ? ' rh-open' : ''}">
+          <div class="rh-rb-head" data-rb-toggle="${b.userBuildingID}">
+            <b>${b.userBuildingName}</b>
+            <span class="rh-rb-prog">${r.planned ? `${r.done} / ${r.sollSum}` : 'kein Soll'}</span>
+            <span class="rh-rb-bar"><i style="width:${pct}%"></i></span>
+            ${r.cost ? `<span class="rh-rb-headcost">${nf(r.cost)} Münzen</span>` : ''}
+            <span class="rh-caret">▾</span>
+          </div>
+          ${open ? `
+          <div class="rh-rb-body">
+            ${r.rows.length ? `
+              <div class="rh-rb-row rh-rb-th"><div>Fahrzeug</div><div>Ist / Soll</div><div>Soll</div><div>Status</div><div>Kosten</div></div>
+              ${r.rows.map(row => rowHtml(b, row)).join('')}` : '<div class="rh-st-empty">Noch keine Fahrzeuge – füg unten welche hinzu.</div>'}
+            <div class="rh-rb-add">
+              <select data-rb-sel="${b.userBuildingID}">${options}</select>
+              <button class="rh-btn" data-rb-act="add" data-b="${b.userBuildingID}">+ Ins Soll</button>
+              <button class="rh-btn" data-rb-act="fromIst" data-b="${b.userBuildingID}" title="Setzt das Soll auf den aktuellen Bestand im Spiel">Ist übernehmen</button>
+              ${r.planned ? `<button class="rh-btn rh-danger" data-rb-act="clear" data-b="${b.userBuildingID}">Soll leeren</button>` : ''}
+            </div>
+          </div>` : ''}
+        </div>`;
+      }).join('') || '<div class="rh-st-empty">Keine Wachen mit Fahrzeugen gefunden.</div>'}
+      <div class="rh-st-foot"><span>${rbError || `Stand ${new Date(rbLoaded).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · Preise aus dem Fahrzeug-Shop`}</span>
+        <button class="rh-btn" data-rb-act="reload" ${rbLoading ? 'disabled' : ''}>${rbLoading ? 'Lädt …' : 'Aktualisieren'}</button></div>`;
+  }
+
+  function onRealbauClick(el) {
+    const tog = el.dataset.rbToggle;
+    if (tog) { rbOpen.has(tog) ? rbOpen.delete(tog) : rbOpen.add(tog); return renderCenter(); }
+    const act = el.dataset.rbAct, b = el.dataset.b, v = el.dataset.v;
+    const soll = (realbau[b] ||= {});
+    if (act === 'inc') soll[v] = (+soll[v] || 0) + 1;
+    else if (act === 'dec') { soll[v] = Math.max(0, (+soll[v] || 0) - 1); if (!soll[v]) delete soll[v]; }
+    else if (act === 'add') {
+      const id = document.querySelector(`#rh-cc [data-rb-sel="${b}"]`)?.value;
+      if (id) soll[id] = (+soll[id] || 0) + 1;
+    } else if (act === 'fromIst') {
+      if (Object.keys(soll).length && !confirm('Das bisherige Soll dieser Wache durch den aktuellen Bestand ersetzen?')) return;
+      realbau[b] = Object.fromEntries(rbIst(b));
+    } else if (act === 'clear') {
+      if (!confirm('Soll dieser Wache wirklich leeren?')) return;
+      delete realbau[b];
+    } else if (act === 'reload') { loadRealbau(true); return renderCenter(); }
+    if (realbau[b] && !Object.keys(realbau[b]).length) delete realbau[b];
+    saveRealbau();
+    renderCenter();
+  }
+
   function afterChange() {
     saveSettings();
     applySettings();
@@ -1605,6 +1880,8 @@
   }
 
   async function onCenterClick(e) {
+    const rbEl = e.target.closest('[data-rb-act],[data-rb-toggle]');
+    if (rbEl) { if (!rbEl.disabled) onRealbauClick(rbEl); return; }
     const range = e.target.closest('[data-range]');
     if (range) { statRange = range.dataset.range; statShift = 0; return renderCenter(); }
     const shift = e.target.closest('[data-shift]');
@@ -1627,7 +1904,7 @@
     if (act === 'keysDefault') { settings.keys = Object.assign({}, DEFAULTS.keys); ccRecording = null; return afterChange(); }
     if (act === 'resetDay') { daily = { date: todayStr(), earned: 0, finished: 0 }; saveDaily(); renderHeaderStats(); return renderCenter(); }
     if (act === 'export') {
-      const data = { app: 'resi-helfer', version: VERSION, settings, notes, exported: new Date().toISOString() };
+      const data = { app: 'resi-helfer', version: VERSION, settings, notes, realbau, exported: new Date().toISOString() };
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
       a.download = `resi-helfer-sicherung-${todayStr()}.json`;
@@ -1645,6 +1922,7 @@
           if (data.app !== 'resi-helfer') throw new Error('Keine ReSi-Helfer-Sicherung');
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(Object.assign({}, DEFAULTS, data.settings || {})));
           localStorage.setItem(NOTES_KEY, JSON.stringify(data.notes || {}));
+          if (data.realbau) localStorage.setItem(RB_KEY, JSON.stringify(data.realbau));
           location.reload();
         } catch (err) { alert('Import fehlgeschlagen: ' + err.message); }
       };
@@ -1653,7 +1931,7 @@
     }
     if (act === 'reset') {
       if (!confirm('Alle ReSi-Helfer-Einstellungen, Wachen-Notizen und den Tageszähler löschen?')) return;
-      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY, TX_KEY].forEach(k => localStorage.removeItem(k));
+      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY, TX_KEY, RB_KEY].forEach(k => localStorage.removeItem(k));
       location.reload();
       return;
     }

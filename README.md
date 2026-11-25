@@ -29,6 +29,10 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 **Statistik**
 - Auswertung nach Tag, Woche, Monat, Jahr und gesamt – direkt aus dem Münzverlauf des Spiels: Verdienst, Ausgaben, Bilanz, Einsätze, Ø pro Einsatz, Diagramm, häufigste Einsätze und Ausgaben nach Art.
 
+**Realbau**
+- **Soll/Ist pro Wache:** Trag ein, welche echten Fahrzeuge an einer Wache stehen. Das Skript vergleicht mit deinem Spielstand und zeigt, was noch fehlt und was es kostet (Preise aus dem Fahrzeug-Shop). Mit „Ist übernehmen“ startest du vom aktuellen Bestand.
+- **Grenzen auf der Karte:** Landkreis- und Bundeslandgrenzen einblenden (Daten: [deutschlandGeoJSON](https://github.com/isellsoap/deutschlandGeoJSON), Quelle DIVA-GIS).
+
 **Alarme**
 - Ton bei Sprechwunsch (S5) und bei neuem Anruf, blinkender Tab-Titel, Desktop-Benachrichtigung.
 
@@ -40,7 +44,7 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 
 ## Datenschutz
 
-Alle Einstellungen und Notizen bleiben lokal in deinem Browser. Das Skript spricht nur mit dem Rettungssimulator selbst.
+Alle Einstellungen und Notizen bleiben lokal in deinem Browser. Das Skript spricht mit dem Rettungssimulator selbst und lädt von GitHub nur die eigene Versionsnummer (Update-Hinweis) sowie – falls eingeschaltet – die Grenzdaten für die Karte.
 
 ## Für Entwickler
 
