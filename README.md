@@ -18,7 +18,7 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 - **Fahrzeug-Statusleiste:** Zähler S1–S8 über den Wachen. Ein Klick filtert die Wachenliste nach diesem Status.
 - **Einsatz-Countdown:** Restzeit neben laufenden Einsätzen.
 - **Einsatzfarben:** Farbiger Rand nach Einsatzart (Brand, THL, Rettungsdienst, Polizei).
-- **Einsatzinfos:** Mögliche Vergütung direkt in der Einsatzliste.
+- **Einsatzinfos:** Bestmögliche Vergütung direkt in der Einsatzliste (z. B. „◉ max. 1,8k“).
 - **Einsatzliste sortieren:** Wie im Spiel, unalarmierte zuerst, nach Restzeit, Vergütung oder Entfernung zur nächsten eigenen Wache.
 - **Eigene Fahrzeuge bei Freigaben:** Ein Symbol zeigt, wie viele deiner Fahrzeuge bei einer Verbandsfreigabe sind. Ab einer einstellbaren Anzahl gilt sie als versorgt (grün) und rutscht ans Ende der Liste.
 - **Wachen-Notizen:** Eigene Notizen an jeder Wache.
