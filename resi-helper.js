@@ -42,6 +42,7 @@
     tabCounters: true,       // Zähler an den Reitern Einsätze/Freigaben
     personnel: true,         // Personal pro Wache
     personnelMulti: true,    // Wachenfenster: Mehrfachauswahl beim Personal
+    realbauDept: true,       // Wachenfenster: Realbau-Karte (Soll/Ist) im Reiter Fahrzeuge
     hotkeys: true,           // Tastenkürzel im Einsatzfenster und beim Einsatz anlegen
     missionNewFocus: true,   // Einsatz anlegen: Cursor direkt ins Einsatzstichwort
     buildingNotes: true,     // eigene Notizen an Wachen
@@ -59,6 +60,36 @@
   const settings = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
   settings.keys = Object.assign({}, DEFAULTS.keys, settings.keys || {}); // neue Aktionen ergänzen
   const saveSettings = () => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+
+  // =====================================================================
+  // Realbau: gemeinsame Daten (Leitstelle und Wachenfenster)
+  // =====================================================================
+  const RB_KEY = 'resiHelfer.realbau';        // { wachenId: { fahrzeugTypId: soll } }
+  const RBN_KEY = 'resiHelfer.realbauNames';  // { wachenId: { fahrzeugTypId: ['Funkrufname', …] } }
+  const readJSON = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch (e) { return fallback; } };
+
+  // Fahrzeugkatalog aus dem Shop einer Wache (nur lesen), je Gebäudetyp einen Tag zwischengespeichert
+  async function shopCatalog(buildingId, buildingType, force) {
+    const key = 'resiHelfer.shop.' + buildingType;
+    const cached = readJSON(key, null);
+    if (!force && cached && Date.now() - cached.t < 86400000) return cached.list;
+    const html = await fetch('vehicleShop/' + buildingId).then(r => r.text());
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const list = [...doc.querySelectorAll('.element-card[vehicleid]')].map(c => {
+      const prices = [...c.textContent.replace(/\s+/g, ' ').matchAll(/([\d.]+)\s*Münzen/g)];
+      return {
+        id: +c.getAttribute('vehicleid'),
+        name: c.querySelector('.element-card-description-name')?.textContent.trim() || '?',
+        task: c.querySelector('.element-card-description-task')?.textContent.trim() || '',
+        coins: prices.length ? +prices[prices.length - 1][1].replace(/\./g, '') : 0, // letzter Treffer = Preis
+      };
+    });
+    const uniq = [...new Map(list.map(v => [v.id, v])).values()];
+    localStorage.setItem(key, JSON.stringify({ t: Date.now(), list: uniq }));
+    return uniq;
+  }
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const normCall = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); // Funkrufnamen vergleichen
 
   // =====================================================================
   // Tastenkürzel (gemeinsam für alle Fenster)
@@ -653,6 +684,7 @@
       ['tabCounters',   'Reiter-Zähler',         'Neue und gesamte Einsätze an „Einsätze“ und „Freigaben“'],
       ['personnel',     'Personal',              'Vorhandenes und benötigtes Personal pro Wache'],
       ['personnelMulti','Personal-Mehrfachauswahl', 'Mehrere Personen auf einmal einem Fahrzeug oder Lehrgang zuordnen'],
+      ['realbauDept',   'Realbau im Wachenfenster', 'Soll/Ist und Funkrufnamen direkt bei der Wache'],
     ]],
     ['Alarme', [
       ['s5Sound',       'Sprechwunsch-Ton',      'Ton, wenn ein Fahrzeug Status 5 meldet'],
@@ -1080,6 +1112,7 @@
     sharedMine:    '<path d="M3 16V8h11v8M14 11h4l3 3v2h-7"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 5h4"/>',
     tabCounters:   '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M9 7V4h6v3"/>',
     personnelMulti:'<rect x="3" y="4" width="6" height="6" rx="1"/><path d="M4.5 7l1 1 2-2"/><rect x="3" y="14" width="6" height="6" rx="1"/><path d="M4.5 17l1 1 2-2M12 7h9M12 17h9"/>',
+    realbauDept:   '<path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-6h6v6"/>',
     personnel:     '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/>',
     hotkeys:       '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
     missionNewFocus:'<rect x="3" y="7" width="18" height="10" rx="2"/><path d="M8 10v4"/>',
@@ -1280,6 +1313,14 @@
     #rh-cc .rh-rb-add { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; padding-top:10px; border-top:1px solid rgba(255,255,255,.08); }
     #rh-cc .rh-rb-add select { flex:1 1 220px; min-width:0; background:#282c35; color:#fff; border:2px solid #b1b1b1; border-radius:100px;
       padding:4px 12px; font:700 12px Arial, sans-serif; outline:none; }
+    #rh-cc .rh-rb-calls { display:flex; flex-wrap:wrap; gap:6px; padding:0 0 8px; }
+    #rh-cc .rh-rb-call { display:inline-flex; align-items:center; gap:6px; flex:0 1 230px; min-width:0; background:#282c35;
+      border-radius:100px; padding:2px 4px 2px 10px; }
+    #rh-cc .rh-rb-call span { font-size:11px; font-weight:700; color:#b1b1b1; min-width:10px; }
+    #rh-cc .rh-rb-call.rh-here span { color:#28a745; }
+    #rh-cc .rh-rb-call input { flex:1; min-width:0; background:transparent; border:0; outline:none; color:#fff; font:12px "Segoe UI", sans-serif; padding:3px 6px; }
+    #rh-cc .rh-rb-call input::placeholder { color:#6c757d; }
+    #rh-cc .rh-rb-call:focus-within { box-shadow:0 0 0 2px #28a745; }
   `;
   document.head.appendChild(ccCss);
 
@@ -1646,33 +1687,15 @@
   // =====================================================================
   // Realbau: Soll/Ist-Abgleich pro Wache
   // =====================================================================
-  const RB_KEY = 'resiHelfer.realbau';
-  let realbau = JSON.parse(localStorage.getItem(RB_KEY) || '{}'); // { wachenId: { fahrzeugTypId: soll } }
-  const saveRealbau = () => localStorage.setItem(RB_KEY, JSON.stringify(realbau));
+  let realbau = readJSON(RB_KEY, {});
+  let rbNames = readJSON(RBN_KEY, {});
+  const saveRealbau = () => { localStorage.setItem(RB_KEY, JSON.stringify(realbau)); localStorage.setItem(RBN_KEY, JSON.stringify(rbNames)); };
   let rbBuildings = null, rbVehicles = null, rbLoading = null, rbError = '', rbLoaded = 0;
   const rbCatalog = {};      // Gebäudetyp -> [{ id, name, task, coins }]
   const rbOpen = new Set();  // aufgeklappte Wachen
 
   // Fahrzeugkatalog aus dem Shop der Wache (nur lesen), je Gebäudetyp einen Tag zwischengespeichert
-  async function loadShop(building, force) {
-    const key = 'resiHelfer.shop.' + building.buildingType;
-    const cached = JSON.parse(localStorage.getItem(key) || 'null');
-    if (!force && cached && Date.now() - cached.t < 86400000) return cached.list;
-    const html = await fetch('vehicleShop/' + building.userBuildingID).then(r => r.text());
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const list = [...doc.querySelectorAll('.element-card[vehicleid]')].map(c => {
-      const prices = [...c.textContent.replace(/\s+/g, ' ').matchAll(/([\d.]+)\s*Münzen/g)];
-      return {
-        id: +c.getAttribute('vehicleid'),
-        name: c.querySelector('.element-card-description-name')?.textContent.trim() || '?',
-        task: c.querySelector('.element-card-description-task')?.textContent.trim() || '',
-        coins: prices.length ? +prices[prices.length - 1][1].replace(/\./g, '') : 0, // letzter Treffer = Preis
-      };
-    });
-    const uniq = [...new Map(list.map(v => [v.id, v])).values()];
-    localStorage.setItem(key, JSON.stringify({ t: Date.now(), list: uniq }));
-    return uniq;
-  }
+  const loadShop = (building, force) => shopCatalog(building.userBuildingID, building.buildingType, force);
 
   function loadRealbau(force) {
     if (rbLoading) return rbLoading;
@@ -1707,10 +1730,18 @@
     const byId = new Map(cat.map(v => [v.id, v]));
     const soll = realbau[b.userBuildingID] || {};
     const ist = rbIst(b.userBuildingID);
+    const names = rbNames[b.userBuildingID] || {};
+    // Funkrufnamen der vorhandenen Fahrzeuge dieser Wache – vorgemerkte Namen, die es schon gibt, gelten als erledigt
+    const existing = new Set((rbVehicles || []).filter(v => String(v.userBuildingID) === String(b.userBuildingID))
+      .map(v => normCall(v.userVehicleName)));
     const ids = [...new Set([...Object.keys(soll).map(Number), ...ist.keys()])];
     const rows = ids.map(id => {
       const s = +soll[id] || 0, i = ist.get(id) || 0, v = byId.get(id) || { id, name: `Typ ${id}`, task: '', coins: 0 };
-      return { ...v, s, i, missing: Math.max(0, s - i), extra: s ? Math.max(0, i - s) : 0 };
+      const calls = Array.from({ length: s }, (_, k) => {
+        const n = (names[id] || [])[k] || '';
+        return { n, here: !!n && existing.has(normCall(n)) };
+      });
+      return { ...v, s, i, calls, missing: Math.max(0, s - i), extra: s ? Math.max(0, i - s) : 0 };
     }).sort((a, b) => (b.s > 0) - (a.s > 0) || a.name.localeCompare(b.name, 'de'));
     const sollSum = rows.reduce((t, r) => t + r.s, 0);
     const done = rows.reduce((t, r) => t + Math.min(r.s, r.i), 0);
@@ -1752,7 +1783,16 @@
           </div>
           <div class="rh-rb-state">${state}</div>
           <div class="rh-rb-cost">${r.missing && r.coins ? `${nf(r.missing * r.coins)}` : ''}</div>
-        </div>`;
+        </div>
+        ${r.s ? `
+        <div class="rh-rb-calls" title="Funkrufnamen vormerken (optional). ✓ = an dieser Wache gibt es schon ein Fahrzeug mit diesem Namen">
+          ${r.calls.map((c, k) => `
+            <label class="rh-rb-call${c.here ? ' rh-here' : ''}">
+              <span>${c.here ? '✓' : k + 1}</span>
+              <input type="text" value="${esc(c.n)}" placeholder="Funkrufname ${k + 1}"
+                data-rbn-b="${b.userBuildingID}" data-rbn-v="${r.id}" data-rbn-i="${k}">
+            </label>`).join('')}
+        </div>` : ''}`;
     };
 
     body.innerHTML = `
@@ -1794,6 +1834,18 @@
         <button class="rh-btn" data-rb-act="reload" ${rbLoading ? 'disabled' : ''}>${rbLoading ? 'Lädt …' : 'Aktualisieren'}</button></div>`;
   }
 
+  // Aus dem Wachenfenster aufrufbar: Kontrollzentrum › Realbau mit dieser Wache öffnen
+  window.__rhOpenRealbau = buildingId => {
+    rbOpen.clear();
+    rbOpen.add(String(buildingId));
+    openCenter('realbau');
+  };
+  // Wurde das Soll in einem anderen Fenster geändert, neu einlesen
+  window.addEventListener('storage', e => {
+    if (e.key === RB_KEY) realbau = readJSON(RB_KEY, {});
+    if (e.key === RBN_KEY) rbNames = readJSON(RBN_KEY, {});
+  });
+
   function onRealbauClick(el) {
     const tog = el.dataset.rbToggle;
     if (tog) { rbOpen.has(tog) ? rbOpen.delete(tog) : rbOpen.add(tog); return renderCenter(); }
@@ -1807,9 +1859,15 @@
     } else if (act === 'fromIst') {
       if (Object.keys(soll).length && !confirm('Das bisherige Soll dieser Wache durch den aktuellen Bestand ersetzen?')) return;
       realbau[b] = Object.fromEntries(rbIst(b));
+      // Funkrufnamen der vorhandenen Fahrzeuge gleich mit übernehmen
+      const byType = {};
+      (rbVehicles || []).filter(x => String(x.userBuildingID) === String(b))
+        .forEach(x => (byType[x.vehicleID] ||= []).push(x.userVehicleName));
+      rbNames[b] = byType;
     } else if (act === 'clear') {
       if (!confirm('Soll dieser Wache wirklich leeren?')) return;
       delete realbau[b];
+      delete rbNames[b];
     } else if (act === 'reload') { loadRealbau(true); return renderCenter(); }
     if (realbau[b] && !Object.keys(realbau[b]).length) delete realbau[b];
     saveRealbau();
@@ -1847,7 +1905,7 @@
     if (act === 'keysDefault') { settings.keys = Object.assign({}, DEFAULTS.keys); ccRecording = null; return afterChange(); }
     if (act === 'resetDay') { daily = { date: todayStr(), earned: 0, finished: 0 }; saveDaily(); renderHeaderStats(); return renderCenter(); }
     if (act === 'export') {
-      const data = { app: 'resi-helfer', version: VERSION, settings, notes, realbau, exported: new Date().toISOString() };
+      const data = { app: 'resi-helfer', version: VERSION, settings, notes, realbau, realbauNames: rbNames, exported: new Date().toISOString() };
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
       a.download = `resi-helfer-sicherung-${todayStr()}.json`;
@@ -1866,6 +1924,7 @@
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(Object.assign({}, DEFAULTS, data.settings || {})));
           localStorage.setItem(NOTES_KEY, JSON.stringify(data.notes || {}));
           if (data.realbau) localStorage.setItem(RB_KEY, JSON.stringify(data.realbau));
+          if (data.realbauNames) localStorage.setItem(RBN_KEY, JSON.stringify(data.realbauNames));
           location.reload();
         } catch (err) { alert('Import fehlgeschlagen: ' + err.message); }
       };
@@ -1874,7 +1933,7 @@
     }
     if (act === 'reset') {
       if (!confirm('Alle ReSi-Helfer-Einstellungen, Wachen-Notizen und den Tageszähler löschen?')) return;
-      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY, TX_KEY, RB_KEY].forEach(k => localStorage.removeItem(k));
+      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY, TX_KEY, RB_KEY, RBN_KEY].forEach(k => localStorage.removeItem(k));
       location.reload();
       return;
     }
@@ -1895,6 +1954,17 @@
   }
 
   function onCenterChange(e) {
+    // Funkrufname im Realbau geändert
+    const nb = e.target.dataset.rbnB;
+    if (nb !== undefined) {
+      const v = e.target.dataset.rbnV, i = +e.target.dataset.rbnI;
+      const list = ((rbNames[nb] ||= {})[v] ||= []);
+      list[i] = e.target.value.trim();
+      while (list.length && !list[list.length - 1]) list.pop();
+      if (!list.length) delete rbNames[nb][v];
+      saveRealbau();
+      return renderCenter();
+    }
     const k = e.target.dataset.set;
     if (!k || k === 'volume') return;
     const v = Math.max(+e.target.min || 0, Math.min(+e.target.max || 9999, +e.target.value || 0));
@@ -2415,6 +2485,109 @@
   }
 
   // =====================================================================
+  // WACHENFENSTER: Realbau-Karte (Soll/Ist + vorgemerkte Funkrufnamen) im Reiter "Fahrzeuge"
+  // =====================================================================
+  async function runRealbauDept() {
+    if (!settings.realbauDept) return;
+    const tab = document.getElementById('tab_department_vehicles');
+    if (!tab) return;
+    let buildingId;
+    try { buildingId = String(USER_BUILDING_ID); } catch (e) { buildingId = location.pathname.match(/department\/(\d+)/)?.[1]; }
+    if (!buildingId) return;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      .rh-rbd .card-headline { display:flex; align-items:center; gap:10px; }
+      .rh-rbd .rh-rbd-prog { margin-left:auto; font-weight:700; }
+      .rh-rbd .rh-rbd-bar { width:110px; height:6px; border-radius:3px; background:rgba(0,0,0,.3); overflow:hidden; }
+      .rh-rbd .rh-rbd-bar i { display:block; height:100%; background:#fff; }
+      .rh-rbd .rh-rbd-sum { margin:0 0 8px; color:#b1b1b1; font-size:13px; }
+      .rh-rbd .rh-rbd-chip { display:inline-block; padding:1px 9px; border-radius:100px; font-size:11.5px; font-weight:700; white-space:nowrap; color:#fff; }
+      .rh-rbd .rh-green { background:#28a745; } .rh-rbd .rh-red { background:#DB1111; } .rh-rbd .rh-gray { background:#3c414b; color:#ddd; }
+      .rh-rbd .rh-rbd-calls { display:flex; flex-wrap:wrap; gap:4px; margin-top:3px; }
+      .rh-rbd .rh-rbd-call { font-size:11px; padding:0 8px; border-radius:100px; background:#3c414b; color:#ddd; white-space:nowrap; }
+      .rh-rbd .rh-rbd-call.rh-here { background:rgba(40,167,69,.25); color:#7ee29a; }
+      .rh-rbd .rh-rbd-cost { text-align:right; color:#ff4d4d; white-space:nowrap; }
+      .rh-rbd .rh-rbd-foot { display:flex; justify-content:flex-end; margin-top:10px; }
+    `;
+    document.head.appendChild(style);
+
+    const card = document.createElement('div');
+    card.className = 'card rh-rbd';
+    card.innerHTML = `<div class="card-headline card-headline-danger"><span>Realbau – Soll/Ist</span></div><div class="card-body">Lade …</div>`;
+    tab.appendChild(card);
+    const body = card.querySelector('.card-body');
+    const head = card.querySelector('.card-headline');
+
+    let catalog = [], vehicles = [];
+    try {
+      const [buildings, vs] = await Promise.all([
+        fetch('/api/userBuildings').then(r => r.json()),
+        fetch('/api/userVehicles').then(r => r.json()),
+      ]);
+      const b = buildings.find(x => String(x.userBuildingID) === buildingId);
+      vehicles = vs.filter(v => String(v.userBuildingID) === buildingId);
+      catalog = b ? await shopCatalog(buildingId, b.buildingType) : [];
+    } catch (e) {
+      body.textContent = 'Realbau-Daten konnten nicht geladen werden.';
+      return;
+    }
+    const byId = new Map(catalog.map(v => [v.id, v]));
+    const nf = n => Number(n).toLocaleString('de-DE');
+    const openEditor = () => { try { window.top.__rhOpenRealbau?.(buildingId); } catch (e) { /* eigener Tab */ } };
+
+    function render() {
+      const soll = readJSON(RB_KEY, {})[buildingId] || {};
+      const names = readJSON(RBN_KEY, {})[buildingId] || {};
+      const ist = new Map();
+      vehicles.forEach(v => ist.set(v.vehicleID, (ist.get(v.vehicleID) || 0) + 1));
+      const existing = new Set(vehicles.map(v => normCall(v.userVehicleName)));
+      const ids = [...new Set([...Object.keys(soll).map(Number), ...ist.keys()])];
+      const rows = ids.map(id => {
+        const s = +soll[id] || 0, i = ist.get(id) || 0, v = byId.get(id) || { name: `Typ ${id}`, task: '', coins: 0 };
+        const calls = ((names[id] || []).slice(0, s)).filter(Boolean).map(n => ({ n, here: existing.has(normCall(n)) }));
+        return { ...v, s, i, calls, missing: Math.max(0, s - i) };
+      }).sort((a, b) => (b.s > 0) - (a.s > 0) || (b.missing > 0) - (a.missing > 0) || a.name.localeCompare(b.name, 'de'));
+      const sollSum = rows.reduce((t, r) => t + r.s, 0);
+      const done = rows.reduce((t, r) => t + Math.min(r.s, r.i), 0);
+      const cost = rows.reduce((t, r) => t + r.missing * r.coins, 0);
+
+      head.innerHTML = `<span>Realbau – Soll/Ist</span>${sollSum ? `<span class="rh-rbd-prog">${done} / ${sollSum}</span>
+        <span class="rh-rbd-bar"><i style="width:${Math.round(done / sollSum * 100)}%"></i></span>` : ''}`;
+
+      if (!sollSum) {
+        body.innerHTML = `<div class="rh-rbd-sum">Für diese Wache ist noch kein Soll hinterlegt.</div>
+          <div class="rh-rbd-foot"><button class="button button-round button-success button-xs" data-rbd="edit">Soll festlegen</button></div>`;
+        return;
+      }
+      const missingList = rows.filter(r => r.missing).map(r => `${r.missing > 1 ? r.missing + '× ' : ''}${esc(r.name)}`);
+      body.innerHTML = `
+        <div class="rh-rbd-sum">${missingList.length
+          ? `Es fehlen noch: <b>${missingList.join(', ')}</b>${cost ? ` · ca. <b>${nf(cost)}</b> Münzen` : ''}`
+          : '<b style="color:#28a745">Alle geplanten Fahrzeuge sind vorhanden ✓</b>'}</div>
+        <table class="table-space striped">
+          <thead><tr><th>Fahrzeug</th><th>Ist / Soll</th><th>Status</th><th>Kosten</th></tr></thead>
+          <tbody>${rows.map(r => `
+            <tr>
+              <td><b>${esc(r.name)}</b>${r.task ? ` <span style="opacity:.6;font-size:.85em">${esc(r.task)}</span>` : ''}
+                ${r.calls.length ? `<div class="rh-rbd-calls">${r.calls.map(c =>
+                  `<span class="rh-rbd-call${c.here ? ' rh-here' : ''}" title="${c.here ? 'Ein Fahrzeug mit diesem Funkrufnamen steht schon an der Wache' : 'Vorgemerkter Funkrufname'}">${c.here ? '✓ ' : ''}${esc(c.n)}</span>`).join('')}</div>` : ''}</td>
+              <td><b>${r.i} / ${r.s}</b></td>
+              <td>${!r.s ? '<span class="rh-rbd-chip rh-gray">nicht im Soll</span>'
+                : r.missing ? `<span class="rh-rbd-chip rh-red">fehlt ${r.missing}</span>` : '<span class="rh-rbd-chip rh-green">✓</span>'}</td>
+              <td class="rh-rbd-cost">${r.missing && r.coins ? nf(r.missing * r.coins) : ''}</td>
+            </tr>`).join('')}</tbody>
+        </table>
+        <div class="rh-rbd-foot"><button class="button button-round button-success button-xs" data-rbd="edit">Soll bearbeiten</button></div>`;
+    }
+
+    card.addEventListener('click', e => { if (e.target.closest('[data-rbd="edit"]')) openEditor(); });
+    // Änderungen im Kontrollzentrum sofort übernehmen
+    window.addEventListener('storage', e => { if (e.key === RB_KEY || e.key === RBN_KEY) render(); });
+    render();
+  }
+
+  // =====================================================================
   // WACHENFENSTER: Mehrfachauswahl beim Personal
   // (Fahrzeug zuweisen / Lehrgänge vormerken für mehrere Personen auf einmal)
   // =====================================================================
@@ -2612,6 +2785,7 @@
   // =====================================================================
   function runDepartmentFrame() {
     runPersonnelMulti();
+    runRealbauDept();
     if (!settings.personnel) return;
     const count = document.getElementById('countUserPersonals');
     const holder = count.parentElement;

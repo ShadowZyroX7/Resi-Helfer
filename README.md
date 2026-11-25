@@ -31,7 +31,8 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 - Auswertung nach Tag, Woche, Monat, Jahr und gesamt – direkt aus dem Münzverlauf des Spiels: Verdienst, Ausgaben, Bilanz, Einsätze, Ø pro Einsatz, Diagramm, häufigste Einsätze und Ausgaben nach Art.
 
 **Realbau**
-- **Soll/Ist pro Wache:** Trag ein, welche echten Fahrzeuge an einer Wache stehen. Das Skript vergleicht mit deinem Spielstand und zeigt, was noch fehlt und was es kostet (Preise aus dem Fahrzeug-Shop). Mit „Ist übernehmen“ startest du vom aktuellen Bestand.
+- **Soll/Ist pro Wache:** Trag ein, welche echten Fahrzeuge an einer Wache stehen. Das Skript vergleicht mit deinem Spielstand und zeigt, was noch fehlt und was es kostet (Preise aus dem Fahrzeug-Shop). Mit „Ist übernehmen“ startest du vom aktuellen Bestand. Pro Fahrzeug lässt sich ein Funkrufname vormerken.
+- **Realbau im Wachenfenster:** Im Reiter „Fahrzeuge“ jeder Wache zeigt eine Karte Soll/Ist, was noch fehlt, die Kosten und die vorgemerkten Funkrufnamen (✓ wenn schon vorhanden).
 
 **Alarme**
 - Ton bei Sprechwunsch (S5) und bei neuem Anruf, blinkender Tab-Titel, Desktop-Benachrichtigung.
