@@ -35,6 +35,7 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 - **Realbau im Wachenfenster:** Im Reiter „Fahrzeuge“ jeder Wache zeigt eine Karte Soll/Ist, was noch fehlt, die Kosten und die vorgemerkten Funkrufnamen (✓ wenn schon vorhanden).
 - **Kosten inkl. Ausbau:** Fehlen Stellplätze für die geplanten Fahrzeuge, rechnet das Skript den Ausbau mit ein (Staffel: Stufe 1–3 je 5.000, 4–6 je 10.000 …).
 - **Wachen vormerken:** Noch nicht gebaute Wachen planen – mit Typ, Notiz, Soll, Funkrufnamen und Baukosten. Ist sie gebaut, überträgt „Ist gebaut → übernehmen“ alles auf die echte Wache.
+- **Vorgemerkte Wachen beim Kauf:** Im Gebäude-Shop und im Fenster „Neue Wache“ stehen deine vorgemerkten Wachen – Name und Adresse kopieren, oder per Knopf direkt ins Namensfeld bzw. in die Ortssuche eintragen.
 
 **Alarme**
 - Ton bei Sprechwunsch (S5) und bei neuem Anruf, blinkender Tab-Titel, Desktop-Benachrichtigung.

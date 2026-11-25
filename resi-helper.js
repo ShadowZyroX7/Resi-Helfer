@@ -8,7 +8,9 @@
   const isMissionFrame = /^\/mission\/\d+/.test(location.pathname) && !!document.querySelector('.detail-title[missionid]');
   const isDepartmentFrame = /^\/department\/\d+/.test(location.pathname) && !!document.getElementById('countUserPersonals');
   const isMissionNewFrame = /^\/missionNew\/\d+/.test(location.pathname) && !!document.getElementById('newMissionNameInput');
-  if (!isMainPage && !isMissionFrame && !isDepartmentFrame && !isMissionNewFrame) return;
+  const isBuildingShopFrame = (/^\/departmentShop\/?$/.test(location.pathname) || /^\/departmentNew\/\d+/.test(location.pathname))
+    && !!document.querySelector('.detail-header');
+  if (!isMainPage && !isMissionFrame && !isDepartmentFrame && !isMissionNewFrame && !isBuildingShopFrame) return;
 
   console.log('[ReSi-Helfer] geladen:', isMainPage ? 'Leitstelle' : isMissionFrame ? 'Einsatzfenster'
     : isMissionNewFrame ? 'Einsatz anlegen' : 'Wache');
@@ -43,6 +45,7 @@
     personnel: true,         // Personal pro Wache
     personnelMulti: true,    // Wachenfenster: Mehrfachauswahl beim Personal
     realbauDept: true,       // Wachenfenster: Realbau-Karte (Soll/Ist) im Reiter Fahrzeuge
+    plannedInShop: true,     // Gebäude-Kauf: vorgemerkte Wachen anzeigen
     hotkeys: true,           // Tastenkürzel im Einsatzfenster und beim Einsatz anlegen
     missionNewFocus: true,   // Einsatz anlegen: Cursor direkt ins Einsatzstichwort
     buildingNotes: true,     // eigene Notizen an Wachen
@@ -120,6 +123,30 @@
     let L = Math.max(1, +level || 1), need = Math.max(0, vehiclesAfter - (L + 1)), cost = 0, slots = 0;
     while (need > 0 && (!maxLevel || L < maxLevel)) { cost += slotPrice(L); L++; need--; slots++; }
     return { slots, cost, blocked: need }; // blocked: Fahrzeuge, die selbst auf Höchststufe nicht hineinpassen
+  }
+  // In die Zwischenablage kopieren – in eingebetteten Fenstern ist die Zwischenablage oft gesperrt, dann Ersatzweg
+  async function copyToClipboard(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* Ersatzweg */ }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { /* nichts */ }
+    ta.remove();
+    return ok;
+  }
+  // Echte Neubaupreise aus dem Gebäude-Shop (steigen mit der Zahl deiner Gebäude): { typId: münzen }
+  async function buildingShopPrices() {
+    const doc = new DOMParser().parseFromString(await fetch('departmentShop').then(r => r.text()), 'text/html');
+    const prices = {};
+    doc.querySelectorAll('.element-card[departmentid]').forEach(c => {
+      const m = c.textContent.replace(/\s+/g, ' ').match(/Münzen Marken ([\d.]+)/);
+      if (m) prices[c.getAttribute('departmentid')] = +m[1].replace(/\./g, '');
+    });
+    return prices;
   }
   // Vorgemerkte (noch nicht gebaute) Wachen: [{ id: 'p…', name, buildingType, note }]
   const RBP_KEY = 'resiHelfer.realbauPlanned';
@@ -215,6 +242,7 @@
   if (isMissionFrame) { runMissionFrame(); return; }
   if (isDepartmentFrame) { runDepartmentFrame(); return; }
   if (isMissionNewFrame) { runMissionNewFrame(); return; }
+  if (isBuildingShopFrame) { runBuildingShopFrame(); return; }
 
   // =====================================================================
   // CSS
@@ -703,7 +731,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.12.1';
+  const VERSION = '0.13.0';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
@@ -718,6 +746,7 @@
       ['personnel',     'Personal',              'Vorhandenes und benötigtes Personal pro Wache'],
       ['personnelMulti','Personal-Mehrfachauswahl', 'Mehrere Personen auf einmal einem Fahrzeug oder Lehrgang zuordnen'],
       ['realbauDept',   'Realbau im Wachenfenster', 'Soll/Ist und Funkrufnamen direkt bei der Wache'],
+      ['plannedInShop', 'Vorgemerkte Wachen beim Kauf', 'Name und Adresse beim Bau einer neuen Wache kopieren oder eintragen'],
     ]],
     ['Alarme', [
       ['s5Sound',       'Sprechwunsch-Ton',      'Ton, wenn ein Fahrzeug Status 5 meldet'],
@@ -1145,6 +1174,7 @@
     sharedMine:    '<path d="M3 16V8h11v8M14 11h4l3 3v2h-7"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 5h4"/>',
     tabCounters:   '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M9 7V4h6v3"/>',
     personnelMulti:'<rect x="3" y="4" width="6" height="6" rx="1"/><path d="M4.5 7l1 1 2-2"/><rect x="3" y="14" width="6" height="6" rx="1"/><path d="M4.5 17l1 1 2-2M12 7h9M12 17h9"/>',
+    plannedInShop: '<path d="M3 21V9l9-6 9 6v12"/><path d="M12 10v6M9 13h6"/>',
     realbauDept:   '<path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-6h6v6"/>',
     personnel:     '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/>',
     hotkeys:       '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
@@ -1770,6 +1800,12 @@
       rbBuildings = buildings;
       rbVehicles = vehicles;
       rbTypes = new Map(types.map(t => [t.buildingID, t]));
+      try {
+        const prices = await buildingShopPrices();
+        rbTypes.forEach((t, id) => { if (prices[id]) t.shopMuenzen = prices[id]; });
+      } catch (e) { /* dann Grundpreis */ }
+      localStorage.setItem('resiHelfer.buildingNames',
+        JSON.stringify(Object.fromEntries([...rbTypes].map(([id, t]) => [id, t.buildingName]))));
       for (const b of buildings) {
         if (rbCatalog[b.buildingType] && !force) continue;
         try { rbCatalog[b.buildingType] = await loadShop(b, force); } catch (e) { rbCatalog[b.buildingType] = []; }
@@ -1818,7 +1854,7 @@
     // Ausbau: alle Fahrzeuge nach dem Kauf brauchen einen Stellplatz (neue Wachen starten auf Stufe 1)
     const type = rbTypes.get(+b.buildingType);
     const exp = expansion(isNew ? 1 : b.level, stationVehicles.length + missingSum, type?.maxLevel);
-    const buildCost = isNew ? (type?.defaultMuenzen || 0) : 0;
+    const buildCost = isNew ? (type?.shopMuenzen || type?.defaultMuenzen || 0) : 0;
     return {
       cat, rows, sollSum, done, isNew, type, exp, vehCost, buildCost,
       cost: vehCost + exp.cost + buildCost, planned: sollSum > 0,
@@ -1899,7 +1935,7 @@
       <div class="rh-rb-form">
         <b>Neue Wache vormerken</b>
         <input type="text" id="rh-rbp-name" placeholder="Name, z. B. FF Oerlenbach" maxlength="80">
-        <select id="rh-rbp-type">${deptTypes.map(t => `<option value="${t.buildingID}">${esc(t.buildingName)} (${nf(t.defaultMuenzen)})</option>`).join('')}</select>
+        <select id="rh-rbp-type">${deptTypes.map(t => `<option value="${t.buildingID}">${esc(t.buildingName)} (${nf(t.shopMuenzen || t.defaultMuenzen)})</option>`).join('')}</select>
         <input type="text" id="rh-rbp-note" placeholder="Notiz / Adresse (optional)" maxlength="200">
         <div class="rh-cc-btns">
           <button class="rh-btn rh-pos-btn" data-rb-act="planSave">Vormerken</button>
@@ -2672,6 +2708,120 @@
       Object.assign(settings, JSON.parse(e.newValue || '{}'));
       settings.keys = Object.assign({}, DEFAULTS.keys, settings.keys || {});
     });
+  }
+
+  // =====================================================================
+  // GEBÄUDE-KAUF: vorgemerkte Wachen anzeigen (Gebäude-Shop und "Neue Wache"-Fenster)
+  // =====================================================================
+  function runBuildingShopFrame() {
+    if (!settings.plannedInShop) return;
+    const header = document.querySelector('.detail-header');
+    if (!header) return;
+    // im "Neue Wache"-Fenster ist der Gebäudetyp in der Adresse: departmentNew/1
+    const typeHere = +(location.pathname.match(/departmentNew\/(\d+)/)?.[1] || 0);
+    const nameInput = document.getElementById('newDepartmentName');
+    const searchInput = document.getElementById('locationSearchInput');
+    const searchBtn = document.getElementById('locationSearchBtn');
+
+    const style = document.createElement('style');
+    style.textContent = `
+      .rh-plw { margin:10px 0 14px; }
+      .rh-plw .card-headline { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+      .rh-plw .rh-plw-caret { margin-left:auto; transition:transform .15s; }
+      .rh-plw.rh-collapsed .rh-plw-caret { transform:rotate(-90deg); }
+      .rh-plw.rh-collapsed .card-body { display:none; }
+      .rh-plw .rh-plw-item { padding:8px 0; }
+      .rh-plw .rh-plw-item + .rh-plw-item { border-top:1px solid rgba(255,255,255,.08); }
+      .rh-plw .rh-plw-item.rh-other { opacity:.55; }
+      .rh-plw .rh-plw-line { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .rh-plw .rh-plw-name { font-weight:700; font-size:14px; }
+      .rh-plw .rh-plw-type { font-size:11px; padding:0 8px; border-radius:100px; background:#3c414b; color:#ddd; }
+      .rh-plw .rh-plw-addr { color:#b1b1b1; font-size:12.5px; margin-top:3px; }
+      .rh-plw .rh-plw-copy { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0;
+        border:0; border-radius:100px; background:transparent; color:#b1b1b1; cursor:pointer; font-size:11px; }
+      .rh-plw .rh-plw-copy:hover { color:#fff; background:rgba(255,255,255,.1); }
+      .rh-plw .rh-plw-copy.rh-done { color:#28a745; font-weight:700; }
+      .rh-plw .rh-plw-copy svg { width:11px; height:11px; }
+      .rh-plw .rh-plw-acts { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+      .rh-plw .rh-plw-empty { color:#b1b1b1; font-size:12.5px; }
+    `;
+    document.head.appendChild(style);
+
+    const card = document.createElement('div');
+    card.className = 'card rh-plw';
+    header.after(card);
+
+    const copyBtn = (text, what) => text
+      ? `<button type="button" class="rh-plw-copy" data-copy="${esc(text)}" title="${what} kopieren">${faIcon('copy')}</button>` : '';
+
+    function render() {
+      const planned = readJSON(RBP_KEY, []);
+      let types = {};
+      try { types = readJSON('resiHelfer.buildingNames', {}); } catch (e) { /* egal */ }
+      // passende Typen zuerst, die anderen ausgegraut darunter
+      const list = planned.slice().sort((a, b) => ((+b.buildingType === typeHere) - (+a.buildingType === typeHere)) || callCmp(a.name, b.name));
+      const matching = list.filter(p => +p.buildingType === typeHere).length;
+      card.style.display = planned.length ? '' : 'none';
+      card.innerHTML = `
+        <div class="card-headline card-headline-danger">
+          <span>Vorgemerkte Wachen (${typeHere ? `${matching} passend · ` : ''}${planned.length})</span>
+          <span class="rh-plw-caret">▾</span>
+        </div>
+        <div class="card-body">
+          ${list.map(p => {
+            const other = typeHere && +p.buildingType !== typeHere;
+            return `
+            <div class="rh-plw-item${other ? ' rh-other' : ''}">
+              <div class="rh-plw-line">
+                <span class="rh-plw-name">${esc(p.name)}</span>${copyBtn(p.name, 'Namen')}
+                ${types[p.buildingType] ? `<span class="rh-plw-type">${esc(types[p.buildingType])}</span>` : ''}
+              </div>
+              ${p.note ? `<div class="rh-plw-line rh-plw-addr">📍 ${esc(p.note)}${copyBtn(p.note, 'Adresse')}</div>` : ''}
+              ${nameInput && !other ? `<div class="rh-plw-acts">
+                <button type="button" class="button button-round button-success button-xs" data-fill-name="${esc(p.name)}">Name eintragen</button>
+                ${p.note && searchInput ? `<button type="button" class="button button-round button-success button-xs" data-fill-addr="${esc(p.note)}">Adresse suchen</button>` : ''}
+              </div>` : ''}
+            </div>`;
+          }).join('') || '<div class="rh-plw-empty">Keine vorgemerkten Wachen.</div>'}
+          ${typeHere && !matching && planned.length ? '<div class="rh-plw-empty">Für diesen Gebäudetyp ist keine Wache vorgemerkt.</div>' : ''}
+        </div>`;
+      card.classList.toggle('rh-collapsed', localStorage.getItem('resiHelfer.plannedShopOpen') === '0');
+      renderFa(card);
+    }
+
+    card.addEventListener('click', async e => {
+      const copy = e.target.closest('[data-copy]');
+      if (copy) {
+        const ok = await copyToClipboard(copy.dataset.copy);
+        copy.innerHTML = ok ? '✓' : '✗';
+        copy.classList.toggle('rh-done', ok);
+        setTimeout(() => { copy.innerHTML = faIcon('copy'); copy.classList.remove('rh-done'); renderFa(copy); }, 1400);
+        return;
+      }
+      const fillName = e.target.closest('[data-fill-name]');
+      if (fillName && nameInput) {
+        nameInput.value = fillName.dataset.fillName;
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        nameInput.dispatchEvent(new Event('change', { bubbles: true }));
+        nameInput.focus();
+        return;
+      }
+      const fillAddr = e.target.closest('[data-fill-addr]');
+      if (fillAddr && searchInput) {
+        searchInput.value = fillAddr.dataset.fillAddr;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        searchInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+        searchBtn?.classList.remove('button-disabled');
+        searchBtn?.click(); // Ortssuche des Spiels: setzt die Markierung auf der Karte
+        return;
+      }
+      if (e.target.closest('.card-headline')) {
+        localStorage.setItem('resiHelfer.plannedShopOpen', card.classList.contains('rh-collapsed') ? '1' : '0');
+        render();
+      }
+    });
+    window.addEventListener('storage', e => { if (e.key === RBP_KEY) render(); });
+    render();
   }
 
   // =====================================================================
