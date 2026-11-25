@@ -112,6 +112,18 @@
   const rowSortName = (plannedNames, istNames) =>
     (plannedNames || []).find(Boolean) || [...(istNames || [])].sort(callCmp)[0] || '';
 
+  // Ausbau: Stellplätze = Ausbaustufe + 1. Preis je weiterem Stellplatz nach der im Spiel beobachteten Staffel:
+  // Stufe 1–3: 5.000, 4–6: 10.000, 7–9: 15.000 … (alle 3 Stufen +5.000)
+  const slotPrice = level => 5000 * Math.max(1, Math.ceil(level / 3));
+  // Wie viele Stellplätze fehlen für so viele Fahrzeuge, und was kosten sie?
+  function expansion(level, vehiclesAfter, maxLevel) {
+    let L = Math.max(1, +level || 1), need = Math.max(0, vehiclesAfter - (L + 1)), cost = 0, slots = 0;
+    while (need > 0 && (!maxLevel || L < maxLevel)) { cost += slotPrice(L); L++; need--; slots++; }
+    return { slots, cost, blocked: need }; // blocked: Fahrzeuge, die selbst auf Höchststufe nicht hineinpassen
+  }
+  // Vorgemerkte (noch nicht gebaute) Wachen: [{ id: 'p…', name, buildingType, note }]
+  const RBP_KEY = 'resiHelfer.realbauPlanned';
+
   // =====================================================================
   // Tastenkürzel (gemeinsam für alle Fenster)
   // =====================================================================
@@ -691,7 +703,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.11.1';
+  const VERSION = '0.12.0';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
@@ -1342,6 +1354,21 @@
     #rh-cc .rh-rb-call input { flex:1; min-width:0; background:transparent; border:0; outline:none; color:#fff; font:12px "Segoe UI", sans-serif; padding:3px 6px; }
     #rh-cc .rh-rb-call input::placeholder { color:#6c757d; }
     #rh-cc .rh-rb-call:focus-within { box-shadow:0 0 0 2px #28a745; }
+    #rh-cc .rh-rb-toolbar { display:flex; justify-content:flex-end; margin:-2px 0 12px; }
+    #rh-cc .rh-rb-form { display:flex; flex-wrap:wrap; align-items:center; gap:8px; background:#21242b; border-radius:12.5px;
+      padding:12px 14px; margin-bottom:12px; box-shadow:inset 3px 0 0 #28a745; }
+    #rh-cc .rh-rb-form b { flex:1 1 100%; }
+    #rh-cc .rh-rb-form input, #rh-cc .rh-rb-form select { flex:1 1 200px; min-width:0; background:#282c35; color:#fff; border:2px solid #b1b1b1;
+      border-radius:100px; padding:4px 12px; font:12.5px "Segoe UI", sans-serif; outline:none; }
+    #rh-cc .rh-rb-form input:focus, #rh-cc .rh-rb-form select:focus { border-color:#28a745; }
+    #rh-cc .rh-btn.rh-pos-btn { border-color:#28a745; color:#28a745; }
+    #rh-cc .rh-btn.rh-pos-btn:hover { background:#28a745; color:#fff; }
+    #rh-cc .rh-rb-newst .rh-rb-head { background:#3c414b; }
+    #rh-cc .rh-rb-tag { font-size:11px; font-weight:700; background:rgba(255,255,255,.12); border-radius:100px; padding:1px 8px; white-space:nowrap; }
+    #rh-cc .rh-rb-costs { font-size:12px; color:#b1b1b1; padding:4px 0 8px; }
+    #rh-cc .rh-rb-costs b { color:#fff; }
+    #rh-cc .rh-rb-note { font-size:12px; color:#b1b1b1; padding:2px 0 6px; }
+    #rh-cc .rh-rb-add select[data-rb-link] { flex:0 1 200px; }
   `;
   document.head.appendChild(ccCss);
 
@@ -1711,10 +1738,12 @@
   let realbau = readJSON(RB_KEY, {});
   let rbNames = readJSON(RBN_KEY, {});
   let rbOrder = readJSON(RBO_KEY, {});
+  let rbPlanned = readJSON(RBP_KEY, []);
   const saveRealbau = () => {
     localStorage.setItem(RB_KEY, JSON.stringify(realbau));
     localStorage.setItem(RBN_KEY, JSON.stringify(rbNames));
     localStorage.setItem(RBO_KEY, JSON.stringify(rbOrder));
+    localStorage.setItem(RBP_KEY, JSON.stringify(rbPlanned));
   };
   // Typ ans Ende der Reihenfolge setzen (neu aufgenommen) bzw. entfernen (Soll auf 0)
   const orderAdd = (b, v) => { const o = (rbOrder[b] ||= []); if (!o.includes(String(v))) o.push(String(v)); };
@@ -1723,6 +1752,8 @@
   const rbCatalog = {};      // Gebäudetyp -> [{ id, name, task, coins }]
   const rbOpen = new Set();  // aufgeklappte Wachen
   let rbAutoOpened = false;  // wurde schon einmal automatisch aufgeklappt?
+  let rbTypes = new Map();   // Gebäudetyp -> { buildingName, defaultMuenzen, maxLevel, buildingCategory }
+  let rbForm = false;        // Formular "Wache vormerken" offen?
 
   // Fahrzeugkatalog aus dem Shop der Wache (nur lesen), je Gebäudetyp einen Tag zwischengespeichert
   const loadShop = (building, force) => shopCatalog(building.userBuildingID, building.buildingType, force);
@@ -1731,16 +1762,20 @@
     if (rbLoading) return rbLoading;
     rbError = '';
     rbLoading = (async () => {
-      const [buildings, vehicles] = await Promise.all([
+      const [buildings, vehicles, types] = await Promise.all([
         fetch('/api/userBuildings').then(r => r.json()),
         fetch('/api/userVehicles').then(r => r.json()),
+        fetch('/api/buildings').then(r => r.json()).catch(() => []),
       ]);
       rbBuildings = buildings;
       rbVehicles = vehicles;
+      rbTypes = new Map(types.map(t => [t.buildingID, t]));
       for (const b of buildings) {
         if (rbCatalog[b.buildingType] && !force) continue;
         try { rbCatalog[b.buildingType] = await loadShop(b, force); } catch (e) { rbCatalog[b.buildingType] = []; }
       }
+      // vorgemerkte Wachen eines Typs, den du (noch) nicht besitzt: Katalog aus dem Zwischenspeicher, falls vorhanden
+      for (const p of rbPlanned) rbCatalog[p.buildingType] ||= readJSON('resiHelfer.shop.' + p.buildingType, null)?.list || [];
       rbLoaded = Date.now();
     })()
       .catch(e => { rbError = 'Wachen und Fahrzeuge konnten nicht geladen werden.'; console.warn('[ReSi-Helfer]', e); })
@@ -1754,15 +1789,16 @@
     (rbVehicles || []).forEach(v => { if (String(v.userBuildingID) === String(buildingId)) m.set(v.vehicleID, (m.get(v.vehicleID) || 0) + 1); });
     return m;
   }
-  // Auswertung einer Wache
+  // Auswertung einer Wache (gebaut oder vorgemerkt)
   function rbStation(b) {
+    const isNew = !!b.planned;
     const cat = rbCatalog[b.buildingType] || [];
     const byId = new Map(cat.map(v => [v.id, v]));
     const soll = realbau[b.userBuildingID] || {};
-    const ist = rbIst(b.userBuildingID);
+    const ist = isNew ? new Map() : rbIst(b.userBuildingID);
     const names = rbNames[b.userBuildingID] || {};
     // Funkrufnamen der vorhandenen Fahrzeuge dieser Wache – vorgemerkte Namen, die es schon gibt, gelten als erledigt
-    const stationVehicles = (rbVehicles || []).filter(v => String(v.userBuildingID) === String(b.userBuildingID));
+    const stationVehicles = isNew ? [] : (rbVehicles || []).filter(v => String(v.userBuildingID) === String(b.userBuildingID));
     const existing = new Set(stationVehicles.map(v => normCall(v.userVehicleName)));
     const ids = [...new Set([...Object.keys(soll).map(Number), ...ist.keys()])];
     const rows = sortRealbauRows(ids.map(id => {
@@ -1777,32 +1813,50 @@
     }), rbOrder[b.userBuildingID]);
     const sollSum = rows.reduce((t, r) => t + r.s, 0);
     const done = rows.reduce((t, r) => t + Math.min(r.s, r.i), 0);
-    const cost = rows.reduce((t, r) => t + r.missing * r.coins, 0);
-    return { cat, rows, sollSum, done, cost, planned: sollSum > 0 };
+    const missingSum = rows.reduce((t, r) => t + r.missing, 0);
+    const vehCost = rows.reduce((t, r) => t + r.missing * r.coins, 0);
+    // Ausbau: alle Fahrzeuge nach dem Kauf brauchen einen Stellplatz (neue Wachen starten auf Stufe 1)
+    const type = rbTypes.get(+b.buildingType);
+    const exp = expansion(isNew ? 1 : b.level, stationVehicles.length + missingSum, type?.maxLevel);
+    const buildCost = isNew ? (type?.defaultMuenzen || 0) : 0;
+    return {
+      cat, rows, sollSum, done, isNew, type, exp, vehCost, buildCost,
+      cost: vehCost + exp.cost + buildCost, planned: sollSum > 0,
+    };
   }
+
+  // vorgemerkte Wachen als "Gebäude" darstellen, damit sie wie echte Wachen behandelt werden
+  const plannedAsBuildings = () => rbPlanned.map(p => ({
+    userBuildingID: p.id, userBuildingName: p.name, buildingType: +p.buildingType, level: 1, planned: true, note: p.note || '',
+  }));
 
   function renderRealbau(body, h2, p) {
     h2.textContent = 'Realbau';
-    p.textContent = 'Soll/Ist pro Wache: Trag ein, welche echten Fahrzeuge an der Wache stehen – das Skript zeigt, was noch fehlt.';
+    p.textContent = 'Soll/Ist pro Wache: Trag ein, welche echten Fahrzeuge an der Wache stehen – das Skript zeigt, was noch fehlt und was es kostet.';
     if (!rbLoading && Date.now() - rbLoaded > 60000) loadRealbau();
     if (!rbBuildings) {
       body.innerHTML = `<div class="rh-st-loading">${rbError || 'Lade Wachen, Fahrzeuge und Fahrzeugkatalog …'}</div>`;
       return;
     }
-    const stations = rbBuildings
-      .filter(b => (rbCatalog[b.buildingType] || []).length) // nur Gebäude mit Fahrzeugen
-      .map(b => ({ b, r: rbStation(b) }));
+    const stations = [
+      ...rbBuildings.filter(b => (rbCatalog[b.buildingType] || []).length), // nur Gebäude mit Fahrzeugen
+      ...plannedAsBuildings(),
+    ].map(b => ({ b, r: rbStation(b) }));
     // nur beim ersten Anzeigen alle aufklappen (bei wenigen Wachen) – danach entscheidet allein der Nutzer
     if (!rbAutoOpened) {
       rbAutoOpened = true;
       if (stations.length <= 3 && !rbOpen.size) stations.forEach(s => rbOpen.add(String(s.b.userBuildingID)));
     }
 
-    const planned = stations.filter(s => s.r.planned);
-    const sollAll = planned.reduce((t, s) => t + s.r.sollSum, 0);
-    const doneAll = planned.reduce((t, s) => t + s.r.done, 0);
-    const costAll = planned.reduce((t, s) => t + s.r.cost, 0);
-    const complete = planned.filter(s => s.r.done >= s.r.sollSum).length;
+    const withSoll = stations.filter(s => s.r.planned || s.r.isNew);
+    const sollAll = withSoll.reduce((t, s) => t + s.r.sollSum, 0);
+    const doneAll = withSoll.reduce((t, s) => t + s.r.done, 0);
+    const costAll = withSoll.reduce((t, s) => t + s.r.cost, 0);
+    const expAll = withSoll.reduce((t, s) => t + s.r.exp.cost, 0);
+    const buildAll = withSoll.reduce((t, s) => t + s.r.buildCost, 0);
+    const complete = withSoll.filter(s => !s.r.isNew && s.r.done >= s.r.sollSum).length;
+    const newCount = stations.filter(s => s.r.isNew).length;
+    const deptTypes = [...rbTypes.values()].filter(t => t.buildingCategory === 'department');
 
     const rowHtml = (b, r) => {
       let state;
@@ -1811,7 +1865,7 @@
       else state = `<span class="rh-rb-chip rh-rb-green">✓${r.extra ? ` +${r.extra}` : ''}</span>`;
       return `
         <div class="rh-rb-row">
-          <div class="rh-rb-name"><b>${r.name}</b><small>${r.task}</small></div>
+          <div class="rh-rb-name"><b>${esc(r.name)}</b><small>${esc(r.task)}</small></div>
           <div class="rh-rb-count" title="Ist / Soll">${r.i} / ${r.s}</div>
           <div class="rh-rb-step">
             <button data-rb-act="dec" data-b="${b.userBuildingID}" data-v="${r.id}" title="Soll verringern" ${r.s ? '' : 'disabled'}>−</button>
@@ -1831,22 +1885,50 @@
         </div>` : ''}`;
     };
 
+    // Kostenzeile: Fahrzeuge · Ausbau · Neubau = Summe
+    const costLine = r => {
+      const parts = [];
+      if (r.vehCost) parts.push(`Fahrzeuge <b>${nf(r.vehCost)}</b>`);
+      if (r.exp.cost) parts.push(`Ausbau ${r.exp.slots} ${r.exp.slots === 1 ? 'Stellplatz' : 'Stellplätze'} <b>${nf(r.exp.cost)}</b>`);
+      if (r.buildCost) parts.push(`Neubau ${esc(r.type?.buildingName || 'Wache')} <b>${nf(r.buildCost)}</b>`);
+      const warn = r.exp.blocked ? ` · <span class="rh-neg">⚠ ${r.exp.blocked} Fahrzeug(e) passen selbst auf Höchststufe nicht</span>` : '';
+      return parts.length ? `<div class="rh-rb-costs">${parts.join(' · ')}${parts.length > 1 ? ` = <b>${nf(r.cost)}</b> Münzen` : ' Münzen'}${warn}</div>` : '';
+    };
+
+    const form = rbForm ? `
+      <div class="rh-rb-form">
+        <b>Neue Wache vormerken</b>
+        <input type="text" id="rh-rbp-name" placeholder="Name, z. B. FF Oerlenbach" maxlength="80">
+        <select id="rh-rbp-type">${deptTypes.map(t => `<option value="${t.buildingID}">${esc(t.buildingName)} (${nf(t.defaultMuenzen)})</option>`).join('')}</select>
+        <input type="text" id="rh-rbp-note" placeholder="Notiz / Adresse (optional)" maxlength="200">
+        <div class="rh-cc-btns">
+          <button class="rh-btn rh-pos-btn" data-rb-act="planSave">Vormerken</button>
+          <button class="rh-btn" data-rb-act="planForm">Abbrechen</button>
+        </div>
+      </div>` : '';
+
     body.innerHTML = `
       <div class="rh-st-kpis">
         <div class="rh-st-kpi"><small>Fahrzeuge laut Soll</small><b>${doneAll} / ${sollAll}</b><em>${sollAll ? Math.round(doneAll / sollAll * 100) + ' % erreicht' : 'Noch kein Soll eingetragen'}</em></div>
         <div class="rh-st-kpi"><small>Fehlen noch</small><b class="${sollAll - doneAll ? 'rh-neg' : 'rh-pos'}">${sollAll - doneAll}</b><em>Fahrzeuge</em></div>
-        <div class="rh-st-kpi"><small>Kosten für den Rest</small><b>${nf(costAll)}</b><em>Münzen (Shop-Preise)</em></div>
-        <div class="rh-st-kpi"><small>Wachen komplett</small><b>${complete} / ${planned.length}</b><em>${stations.length - planned.length ? `${stations.length - planned.length} ohne Soll` : '&nbsp;'}</em></div>
+        <div class="rh-st-kpi"><small>Kosten für den Rest</small><b>${nf(costAll)}</b><em>${expAll || buildAll ? `inkl. Ausbau ${nf(expAll)}${buildAll ? ` · Neubau ${nf(buildAll)}` : ''}` : 'Münzen (Shop-Preise)'}</em></div>
+        <div class="rh-st-kpi"><small>Wachen komplett</small><b>${complete} / ${withSoll.length - newCount}</b><em>${newCount ? `+ ${newCount} vorgemerkt` : stations.length - withSoll.length ? `${stations.length - withSoll.length} ohne Soll` : '&nbsp;'}</em></div>
       </div>
+      <div class="rh-rb-toolbar">
+        <button class="rh-btn" data-rb-act="planForm">${rbForm ? '× Abbrechen' : '+ Wache vormerken'}</button>
+      </div>
+      ${form}
       ${stations.map(({ b, r }) => {
         const open = rbOpen.has(String(b.userBuildingID));
         const pct = r.sollSum ? Math.round(r.done / r.sollSum * 100) : 0;
         const options = r.cat.slice().sort((x, y) => x.name.localeCompare(y.name, 'de'))
-          .map(v => `<option value="${v.id}">${v.name}${v.task ? ' – ' + v.task : ''}${v.coins ? ` (${nf(v.coins)})` : ''}</option>`).join('');
+          .map(v => `<option value="${v.id}">${esc(v.name)}${v.task ? ' – ' + esc(v.task) : ''}${v.coins ? ` (${nf(v.coins)})` : ''}</option>`).join('');
+        const sameType = rbBuildings.filter(x => x.buildingType === b.buildingType);
         return `
-        <div class="rh-rb-st${open ? ' rh-open' : ''}">
+        <div class="rh-rb-st${open ? ' rh-open' : ''}${r.isNew ? ' rh-rb-newst' : ''}">
           <div class="rh-rb-head" data-rb-toggle="${b.userBuildingID}">
-            <b>${b.userBuildingName}</b>
+            <b>${esc(b.userBuildingName)}</b>
+            ${r.isNew ? `<span class="rh-rb-tag" title="Noch nicht gebaut">vorgemerkt · ${esc(r.type?.buildingName || '')}</span>` : ''}
             <span class="rh-rb-prog">${r.planned ? `${r.done} / ${r.sollSum}` : 'kein Soll'}</span>
             <span class="rh-rb-bar"><i style="width:${pct}%"></i></span>
             ${r.cost ? `<span class="rh-rb-headcost">${nf(r.cost)} Münzen</span>` : ''}
@@ -1854,20 +1936,30 @@
           </div>
           ${open ? `
           <div class="rh-rb-body">
+            ${r.isNew && b.note ? `<div class="rh-rb-note">📍 ${esc(b.note)}</div>` : ''}
+            ${costLine(r)}
             ${r.rows.length ? `
               <div class="rh-rb-row rh-rb-th"><div>Fahrzeug</div><div>Ist / Soll</div><div>Soll</div><div>Status</div><div>Kosten</div></div>
-              ${r.rows.map(row => rowHtml(b, row)).join('')}` : '<div class="rh-st-empty">Noch keine Fahrzeuge – füg unten welche hinzu.</div>'}
+              ${r.rows.map(row => rowHtml(b, row)).join('')}` : `<div class="rh-st-empty">${r.cat.length ? 'Noch keine Fahrzeuge – füg unten welche hinzu.'
+                : `Die Fahrzeugliste für „${esc(r.type?.buildingName || 'diesen Typ')}“ ist erst verfügbar, wenn du eine solche Wache besitzt.`}</div>`}
             <div class="rh-rb-add">
-              <select data-rb-sel="${b.userBuildingID}">${options}</select>
-              <button class="rh-btn" data-rb-act="add" data-b="${b.userBuildingID}">+ Ins Soll</button>
-              <button class="rh-btn" data-rb-act="fromIst" data-b="${b.userBuildingID}" title="Setzt das Soll auf den aktuellen Bestand im Spiel">Ist übernehmen</button>
-              ${r.planned ? `<button class="rh-btn rh-danger" data-rb-act="clear" data-b="${b.userBuildingID}">Soll leeren</button>` : ''}
+              ${r.cat.length ? `<select data-rb-sel="${b.userBuildingID}">${options}</select>
+                <button class="rh-btn" data-rb-act="add" data-b="${b.userBuildingID}">+ Ins Soll</button>` : ''}
+              ${r.isNew ? `
+                <button class="rh-btn" data-rb-act="planRename" data-b="${b.userBuildingID}">Umbenennen / Notiz</button>
+                ${sameType.length ? `<select data-rb-link="${b.userBuildingID}" title="Wurde die Wache gebaut? Dann hier die echte Wache wählen">
+                    ${sameType.map(x => `<option value="${x.userBuildingID}">${esc(x.userBuildingName)}</option>`).join('')}</select>
+                  <button class="rh-btn" data-rb-act="planLink" data-b="${b.userBuildingID}" title="Soll und Funkrufnamen auf die gebaute Wache übertragen">Ist gebaut → übernehmen</button>` : ''}
+                <button class="rh-btn rh-danger" data-rb-act="planDel" data-b="${b.userBuildingID}">Vormerkung löschen</button>`
+              : `<button class="rh-btn" data-rb-act="fromIst" data-b="${b.userBuildingID}" title="Setzt das Soll auf den aktuellen Bestand im Spiel">Ist übernehmen</button>
+                ${r.planned ? `<button class="rh-btn rh-danger" data-rb-act="clear" data-b="${b.userBuildingID}">Soll leeren</button>` : ''}`}
             </div>
           </div>` : ''}
         </div>`;
       }).join('') || '<div class="rh-st-empty">Keine Wachen mit Fahrzeugen gefunden.</div>'}
-      <div class="rh-st-foot"><span>${rbError || `Stand ${new Date(rbLoaded).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · Preise aus dem Fahrzeug-Shop`}</span>
+      <div class="rh-st-foot"><span>${rbError || `Stand ${new Date(rbLoaded).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · Fahrzeugpreise aus dem Shop · Ausbau geschätzt (Stufe 1–3: 5.000, 4–6: 10.000 … je Stellplatz)`}</span>
         <button class="rh-btn" data-rb-act="reload" ${rbLoading ? 'disabled' : ''}>${rbLoading ? 'Lädt …' : 'Aktualisieren'}</button></div>`;
+    if (rbForm) document.getElementById('rh-rbp-name')?.focus();
   }
 
   // Aus dem Wachenfenster aufrufbar: Kontrollzentrum › Realbau mit dieser Wache öffnen
@@ -1882,17 +1974,75 @@
     if (e.key === RB_KEY) realbau = readJSON(RB_KEY, {});
     if (e.key === RBN_KEY) rbNames = readJSON(RBN_KEY, {});
     if (e.key === RBO_KEY) rbOrder = readJSON(RBO_KEY, {});
+    if (e.key === RBP_KEY) rbPlanned = readJSON(RBP_KEY, []);
   });
+
+  // Soll, Funkrufnamen und Reihenfolge einer Wache (auch vorgemerkt) entfernen
+  const dropStationData = id => { delete realbau[id]; delete rbNames[id]; delete rbOrder[id]; };
 
   function onRealbauClick(el) {
     const tog = el.dataset.rbToggle;
     if (tog) { rbOpen.has(tog) ? rbOpen.delete(tog) : rbOpen.add(tog); return renderCenter(); }
     const act = el.dataset.rbAct, b = el.dataset.b, v = el.dataset.v;
+    const q = sel => document.querySelector('#rh-cc ' + sel);
+
+    // ---- vorgemerkte Wachen ----
+    if (act === 'planForm') { rbForm = !rbForm; return renderCenter(); }
+    if (act === 'planSave') {
+      const name = q('#rh-rbp-name')?.value.trim();
+      if (!name) { q('#rh-rbp-name')?.focus(); return; }
+      const id = 'p' + Date.now().toString(36);
+      rbPlanned.push({ id, name, buildingType: +q('#rh-rbp-type')?.value || 1, note: q('#rh-rbp-note')?.value.trim() || '' });
+      rbForm = false;
+      rbOpen.add(id);
+      rbCatalog[rbPlanned[rbPlanned.length - 1].buildingType] ||= readJSON('resiHelfer.shop.' + rbPlanned[rbPlanned.length - 1].buildingType, null)?.list || [];
+      saveRealbau();
+      return renderCenter();
+    }
+    if (act === 'planRename') {
+      const p = rbPlanned.find(x => x.id === b);
+      if (!p) return;
+      const name = prompt('Name der vorgemerkten Wache:', p.name);
+      if (name === null) return;
+      const note = prompt('Notiz / Adresse (optional):', p.note || '');
+      if (name.trim()) p.name = name.trim();
+      if (note !== null) p.note = note.trim();
+      saveRealbau();
+      return renderCenter();
+    }
+    if (act === 'planDel') {
+      const p = rbPlanned.find(x => x.id === b);
+      if (!p || !confirm(`Vorgemerkte Wache „${p.name}“ samt Soll löschen?`)) return;
+      rbPlanned = rbPlanned.filter(x => x.id !== b);
+      dropStationData(b);
+      rbOpen.delete(b);
+      saveRealbau();
+      return renderCenter();
+    }
+    if (act === 'planLink') {
+      const target = q(`[data-rb-link="${b}"]`)?.value;
+      const p = rbPlanned.find(x => x.id === b);
+      const real = rbBuildings.find(x => String(x.userBuildingID) === String(target));
+      if (!p || !real) return;
+      if (realbau[target] && Object.keys(realbau[target]).length
+        && !confirm(`„${real.userBuildingName}“ hat schon ein Soll. Durch das Soll von „${p.name}“ ersetzen?`)) return;
+      realbau[target] = realbau[b] || {};
+      rbNames[target] = rbNames[b] || {};
+      rbOrder[target] = rbOrder[b] || [];
+      dropStationData(b);
+      rbPlanned = rbPlanned.filter(x => x.id !== b);
+      rbOpen.delete(b);
+      rbOpen.add(String(target));
+      saveRealbau();
+      return renderCenter();
+    }
+
+    // ---- Soll bearbeiten ----
     const soll = (realbau[b] ||= {});
     if (act === 'inc') { if (!soll[v]) orderAdd(b, v); soll[v] = (+soll[v] || 0) + 1; }
     else if (act === 'dec') { soll[v] = Math.max(0, (+soll[v] || 0) - 1); if (!soll[v]) { delete soll[v]; orderDel(b, v); } }
     else if (act === 'add') {
-      const id = document.querySelector(`#rh-cc [data-rb-sel="${b}"]`)?.value;
+      const id = q(`[data-rb-sel="${b}"]`)?.value;
       if (id) { if (!soll[id]) orderAdd(b, id); soll[id] = (+soll[id] || 0) + 1; }
     } else if (act === 'fromIst') {
       if (Object.keys(soll).length && !confirm('Das bisherige Soll dieser Wache durch den aktuellen Bestand ersetzen?')) return;
@@ -1905,9 +2055,7 @@
       rbOrder[b] = Object.keys(realbau[b]);
     } else if (act === 'clear') {
       if (!confirm('Soll dieser Wache wirklich leeren?')) return;
-      delete realbau[b];
-      delete rbNames[b];
-      delete rbOrder[b];
+      dropStationData(b);
     } else if (act === 'reload') { loadRealbau(true); return renderCenter(); }
     if (realbau[b] && !Object.keys(realbau[b]).length) delete realbau[b];
     saveRealbau();
@@ -1945,7 +2093,7 @@
     if (act === 'keysDefault') { settings.keys = Object.assign({}, DEFAULTS.keys); ccRecording = null; return afterChange(); }
     if (act === 'resetDay') { daily = { date: todayStr(), earned: 0, finished: 0 }; saveDaily(); renderHeaderStats(); return renderCenter(); }
     if (act === 'export') {
-      const data = { app: 'resi-helfer', version: VERSION, settings, notes, realbau, realbauNames: rbNames, realbauOrder: rbOrder, exported: new Date().toISOString() };
+      const data = { app: 'resi-helfer', version: VERSION, settings, notes, realbau, realbauNames: rbNames, realbauOrder: rbOrder, realbauPlanned: rbPlanned, exported: new Date().toISOString() };
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
       a.download = `resi-helfer-sicherung-${todayStr()}.json`;
@@ -1966,6 +2114,7 @@
           if (data.realbau) localStorage.setItem(RB_KEY, JSON.stringify(data.realbau));
           if (data.realbauNames) localStorage.setItem(RBN_KEY, JSON.stringify(data.realbauNames));
           if (data.realbauOrder) localStorage.setItem(RBO_KEY, JSON.stringify(data.realbauOrder));
+          if (data.realbauPlanned) localStorage.setItem(RBP_KEY, JSON.stringify(data.realbauPlanned));
           location.reload();
         } catch (err) { alert('Import fehlgeschlagen: ' + err.message); }
       };
@@ -1974,7 +2123,7 @@
     }
     if (act === 'reset') {
       if (!confirm('Alle ReSi-Helfer-Einstellungen, Wachen-Notizen und den Tageszähler löschen?')) return;
-      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY, TX_KEY, RB_KEY, RBN_KEY, RBO_KEY].forEach(k => localStorage.removeItem(k));
+      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY, TX_KEY, RB_KEY, RBN_KEY, RBO_KEY, RBP_KEY].forEach(k => localStorage.removeItem(k));
       location.reload();
       return;
     }
@@ -2564,15 +2713,17 @@
     const body = card.querySelector('.card-body');
     const head = card.querySelector('.card-headline');
 
-    let catalog = [], vehicles = [];
+    let catalog = [], vehicles = [], building = null, bType = null;
     try {
       const [buildings, vs] = await Promise.all([
         fetch('/api/userBuildings').then(r => r.json()),
         fetch('/api/userVehicles').then(r => r.json()),
       ]);
       const b = buildings.find(x => String(x.userBuildingID) === buildingId);
+      building = b;
       vehicles = vs.filter(v => String(v.userBuildingID) === buildingId);
       catalog = b ? await shopCatalog(buildingId, b.buildingType) : [];
+      bType = b ? (await fetch('/api/buildings').then(r => r.json()).catch(() => [])).find(t => t.buildingID === b.buildingType) : null;
     } catch (e) {
       body.textContent = 'Realbau-Daten konnten nicht geladen werden.';
       return;
@@ -2597,6 +2748,8 @@
       const sollSum = rows.reduce((t, r) => t + r.s, 0);
       const done = rows.reduce((t, r) => t + Math.min(r.s, r.i), 0);
       const cost = rows.reduce((t, r) => t + r.missing * r.coins, 0);
+      const missingSum = rows.reduce((t, r) => t + r.missing, 0);
+      const exp = expansion(building?.level || 1, vehicles.length + missingSum, bType?.maxLevel);
 
       head.innerHTML = `<span>Realbau – Soll/Ist</span>${sollSum ? `<span class="rh-rbd-prog">${done} / ${sollSum}</span>
         <span class="rh-rbd-bar"><i style="width:${Math.round(done / sollSum * 100)}%"></i></span>` : '<span class="rh-rbd-prog"></span>'}
@@ -2610,7 +2763,9 @@
       const missingList = rows.filter(r => r.missing).map(r => `${r.missing > 1 ? r.missing + '× ' : ''}${esc(r.name)}`);
       body.innerHTML = `
         <div class="rh-rbd-sum">${missingList.length
-          ? `Es fehlen noch: <b>${missingList.join(', ')}</b>${cost ? ` · ca. <b>${nf(cost)}</b> Münzen` : ''}`
+          ? `Es fehlen noch: <b>${missingList.join(', ')}</b>${cost || exp.cost ? ` · ca. <b>${nf(cost + exp.cost)}</b> Münzen` : ''}${exp.cost
+            ? ` <span style="opacity:.75">(Fahrzeuge ${nf(cost)} + Ausbau ${exp.slots} ${exp.slots === 1 ? 'Stellplatz' : 'Stellplätze'} ${nf(exp.cost)})</span>` : ''}${exp.blocked
+            ? ` · <span style="color:#ff4d4d">⚠ ${exp.blocked} Fahrzeug(e) passen selbst auf Höchststufe nicht</span>` : ''}`
           : '<b style="color:#28a745">Alle geplanten Fahrzeuge sind vorhanden ✓</b>'}</div>
         <table class="table-space striped">
           <thead><tr><th>Fahrzeug</th><th>Ist / Soll</th><th>Status</th><th>Kosten</th></tr></thead>

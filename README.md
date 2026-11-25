@@ -33,6 +33,8 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 **Realbau**
 - **Soll/Ist pro Wache:** Trag ein, welche echten Fahrzeuge an einer Wache stehen. Das Skript vergleicht mit deinem Spielstand und zeigt, was noch fehlt und was es kostet (Preise aus dem Fahrzeug-Shop). Mit „Ist übernehmen“ startest du vom aktuellen Bestand. Pro Fahrzeug lässt sich ein Funkrufname vormerken.
 - **Realbau im Wachenfenster:** Im Reiter „Fahrzeuge“ jeder Wache zeigt eine Karte Soll/Ist, was noch fehlt, die Kosten und die vorgemerkten Funkrufnamen (✓ wenn schon vorhanden).
+- **Kosten inkl. Ausbau:** Fehlen Stellplätze für die geplanten Fahrzeuge, rechnet das Skript den Ausbau mit ein (Staffel: Stufe 1–3 je 5.000, 4–6 je 10.000 …).
+- **Wachen vormerken:** Noch nicht gebaute Wachen planen – mit Typ, Notiz, Soll, Funkrufnamen und Baukosten. Ist sie gebaut, überträgt „Ist gebaut → übernehmen“ alles auf die echte Wache.
 
 **Alarme**
 - Ton bei Sprechwunsch (S5) und bei neuem Anruf, blinkender Tab-Titel, Desktop-Benachrichtigung.
