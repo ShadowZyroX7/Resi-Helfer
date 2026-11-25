@@ -23,6 +23,7 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 - **Eigene Fahrzeuge bei Freigaben:** Ein Symbol zeigt, wie viele deiner Fahrzeuge bei einer Verbandsfreigabe sind. Ab einer einstellbaren Anzahl gilt sie als versorgt (grün) und rutscht ans Ende der Liste.
 - **Wachen-Notizen:** Eigene Notizen an jeder Wache.
 - **Personal:** Vorhandenes und benötigtes Personal pro Wache.
+- **Personal-Mehrfachauswahl:** Im Wachenfenster (Reiter „Personal“) mehrere Personen auf einmal auswählen – per Kästchen, Shift für einen Bereich oder nach Merkmal (z. B. „ohne Lehrgang Gefahrgut“) – und gemeinsam einem Fahrzeug zuweisen oder für Lehrgänge vormerken.
 - **Tagesleiste:** Eigene Einsätze, freie Fahrzeuge und Tagesverdienst in der Kopfzeile.
 - **Reiter-Zähler:** Neue und gesamte Einsätze an den Reitern „Einsätze“ und „Freigaben“.
 
@@ -31,7 +32,6 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 
 **Realbau**
 - **Soll/Ist pro Wache:** Trag ein, welche echten Fahrzeuge an einer Wache stehen. Das Skript vergleicht mit deinem Spielstand und zeigt, was noch fehlt und was es kostet (Preise aus dem Fahrzeug-Shop). Mit „Ist übernehmen“ startest du vom aktuellen Bestand.
-- **Grenzen auf der Karte:** Landkreis- und Bundeslandgrenzen einblenden (Daten: [deutschlandGeoJSON](https://github.com/isellsoap/deutschlandGeoJSON), Quelle DIVA-GIS).
 
 **Alarme**
 - Ton bei Sprechwunsch (S5) und bei neuem Anruf, blinkender Tab-Titel, Desktop-Benachrichtigung.
@@ -44,7 +44,7 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 
 ## Datenschutz
 
-Alle Einstellungen und Notizen bleiben lokal in deinem Browser. Das Skript spricht mit dem Rettungssimulator selbst und lädt von GitHub nur die eigene Versionsnummer (Update-Hinweis) sowie – falls eingeschaltet – die Grenzdaten für die Karte.
+Alle Einstellungen und Notizen bleiben lokal in deinem Browser. Das Skript spricht mit dem Rettungssimulator selbst und lädt von GitHub nur die eigene Versionsnummer (Update-Hinweis).
 
 ## Für Entwickler
 

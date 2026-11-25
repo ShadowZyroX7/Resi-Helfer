@@ -36,14 +36,12 @@
     missionSort: 'default',  // default | unalarmed | time | credits | distance
     sharedMine: true,        // Freigaben: Symbol mit Anzahl eigener alarmierter Fahrzeuge
     sharedEnough: 4,         // ab so vielen eigenen Fahrzeugen gilt eine Freigabe als versorgt
-    mapBorders: true,        // Karte: Grenzen anzeigen
-    mapDistricts: true,      //   … Landkreise
-    mapStates: true,         //   … Bundesländer
     headerStats: true,       // Statistik-Leiste in der Kopfzeile
     countdownSoon: 30,       // Countdown wird ab so vielen Sekunden grün
     statusShowAll: false,    // Statusleiste: auch leere Status 5–8 zeigen
     tabCounters: true,       // Zähler an den Reitern Einsätze/Freigaben
     personnel: true,         // Personal pro Wache
+    personnelMulti: true,    // Wachenfenster: Mehrfachauswahl beim Personal
     hotkeys: true,           // Tastenkürzel im Einsatzfenster und beim Einsatz anlegen
     missionNewFocus: true,   // Einsatz anlegen: Cursor direkt ins Einsatzstichwort
     buildingNotes: true,     // eigene Notizen an Wachen
@@ -641,7 +639,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.10.0';
+  const VERSION = '0.11.0';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
@@ -650,11 +648,11 @@
       ['missionInfo',   'Einsatzinfos',          'Vergütung in der Einsatzliste'],
       ['missionSortBar','Einsatzliste sortieren', 'Unalarmierte zuerst, Restzeit, Vergütung oder Entfernung'],
       ['sharedMine',    'Eigene Fahrzeuge bei Freigaben', 'Zeigt, wie viele deiner Fahrzeuge bei einer Freigabe sind'],
-      ['mapBorders',    'Grenzen auf der Karte', 'Landkreis- und Bundeslandgrenzen einblenden'],
       ['buildingNotes', 'Wachen-Notizen',        'Eigene Notizen an jeder Wache'],
       ['headerStats',   'Tagesleiste',           'Einsätze, freie Fahrzeuge und Tagesverdienst oben'],
       ['tabCounters',   'Reiter-Zähler',         'Neue und gesamte Einsätze an „Einsätze“ und „Freigaben“'],
       ['personnel',     'Personal',              'Vorhandenes und benötigtes Personal pro Wache'],
+      ['personnelMulti','Personal-Mehrfachauswahl', 'Mehrere Personen auf einmal einem Fahrzeug oder Lehrgang zuordnen'],
     ]],
     ['Alarme', [
       ['s5Sound',       'Sprechwunsch-Ton',      'Ton, wenn ein Fahrzeug Status 5 meldet'],
@@ -776,7 +774,6 @@
     checkS5();
     renderHeaderStats();
     renderTabCounters();
-    renderBorders();
     loadOwnVehicles();
     if (settings.missionSort === 'distance' && !buildingSpots.length) loadBuildingSpots();
     if (settings.personnel && !buildingInfo.size) loadBuildings(); else decoratePersonnel();
@@ -1060,60 +1057,8 @@
   setInterval(renderHeaderStats, 1500);
   renderHeaderStats();
 
-  // =====================================================================
-  // Karte: Landkreis- und Bundeslandgrenzen
-  // Daten: github.com/isellsoap/deutschlandGeoJSON (Quelle: DIVA-GIS), im Browser zwischengespeichert
-  // =====================================================================
-  const GEO_BASE = 'https://raw.githubusercontent.com/isellsoap/deutschlandGeoJSON/main/';
-  const GEO_URLS = {
-    districts: GEO_BASE + '4_kreise/4_niedrig.geo.json',      // 434 Landkreise / kreisfreie Städte
-    states:    GEO_BASE + '2_bundeslaender/3_mittel.geo.json', // 16 Bundesländer
-  };
-  const GEO_STYLE = {
-    districts: { color: '#ffffff', weight: 1.3, opacity: 0.6, dashArray: '5 5', fill: false },
-    states:    { color: '#FFB300', weight: 2.6, opacity: 0.9, fill: false },
-  };
-  const geoLayers = {};
-  const geoLoading = {};
-
-  async function loadGeo(url) {
-    try { // Cache-Speicher des Browsers, damit die Daten nicht bei jedem Laden neu kommen
-      const cache = await caches.open('resi-helfer-geo');
-      let res = await cache.match(url);
-      if (!res) { res = await fetch(url); if (res.ok) await cache.put(url, res.clone()); }
-      return await res.json();
-    } catch (e) {
-      return fetch(url).then(r => r.json());
-    }
-  }
-
-  async function renderBorders() {
-    const map = window.mymap, Lf = window.L;
-    if (!map || !Lf?.geoJSON) return;
-    if (!map.getPane('rhBorders')) {
-      const pane = map.createPane('rhBorders');
-      pane.style.zIndex = 390;          // über der Karte, unter Fahrzeugen und Einsätzen
-      pane.style.pointerEvents = 'none'; // Klicks gehen weiter an die Karte
-    }
-    for (const kind of ['districts', 'states']) {
-      const on = settings.mapBorders && settings[kind === 'states' ? 'mapStates' : 'mapDistricts'];
-      if (on && !geoLayers[kind] && !geoLoading[kind]) {
-        geoLoading[kind] = loadGeo(GEO_URLS[kind])
-          .then(data => {
-            geoLayers[kind] = Lf.geoJSON(data, { pane: 'rhBorders', interactive: false, style: GEO_STYLE[kind] });
-            renderBorders();
-          })
-          .catch(e => console.warn('[ReSi-Helfer] Grenzen nicht geladen', e))
-          .finally(() => { delete geoLoading[kind]; });
-        continue;
-      }
-      const layer = geoLayers[kind];
-      if (!layer) continue;
-      if (on && !map.hasLayer(layer)) layer.addTo(map);
-      if (!on && map.hasLayer(layer)) map.removeLayer(layer);
-    }
-  }
-  renderBorders();
+  // Grenzdaten der entfernten Kartenfunktion (bis 0.10.0) aus dem Browser-Speicher löschen
+  try { window.caches?.delete('resi-helfer-geo'); } catch (e) { /* egal */ }
 
   // =====================================================================
   // Kontrollzentrum: Module + Einstellungen (großes Fenster)
@@ -1131,10 +1076,10 @@
     callDesktop:   '<path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
     missionBox:    '<path d="M10 6h10M10 12h10M10 18h10"/><path d="M3.5 6l1.5 1.5L7.5 5M3.5 12l1.5 1.5L7.5 11M3.5 18l1.5 1.5L7.5 17"/>',
     listBar:       '<path d="M3 5h18l-7 8v6l-4-2v-4z"/>',
-    mapBorders:    '<path d="M9 3L3 6v15l6-3 6 3 6-3V3l-6 3z"/><path d="M9 3v15M15 6v15"/>',
     missionSortBar:'<path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/>',
     sharedMine:    '<path d="M3 16V8h11v8M14 11h4l3 3v2h-7"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 5h4"/>',
     tabCounters:   '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M9 7V4h6v3"/>',
+    personnelMulti:'<rect x="3" y="4" width="6" height="6" rx="1"/><path d="M4.5 7l1 1 2-2"/><rect x="3" y="14" width="6" height="6" rx="1"/><path d="M4.5 17l1 1 2-2M12 7h9M12 17h9"/>',
     personnel:     '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/>',
     hotkeys:       '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
     missionNewFocus:'<rect x="3" y="7" width="18" height="10" rx="2"/><path d="M8 10v4"/>',
@@ -1447,8 +1392,6 @@
 
         <div class="rh-cc-sec"><h3>${secIcon('statusbar')} Leitstelle</h3><div class="rh-cc-rows">
           ${sw('statusShowAll', 'Alle Status in der Statusleiste', 'Auch leere Status 5–8 anzeigen')}
-          ${sw('mapDistricts', 'Landkreisgrenzen auf der Karte', 'Weiße gestrichelte Linien (Modul „Grenzen auf der Karte“ muss an sein)')}
-          ${sw('mapStates', 'Bundeslandgrenzen auf der Karte', 'Gelbe Linien (Modul „Grenzen auf der Karte“ muss an sein)')}
           <div class="rh-cc-row"><div class="rh-cc-lbl"><b>Countdown hervorheben</b><small>Restzeit wird grün, wenn weniger als so viele Sekunden übrig sind</small></div>
             <input type="number" min="0" max="600" step="5" data-set="countdownSoon" value="${settings.countdownSoon}"></div>
           <div class="rh-cc-row"><div class="rh-cc-lbl"><b>Freigabe gilt als versorgt ab</b>
@@ -2472,9 +2415,203 @@
   }
 
   // =====================================================================
+  // WACHENFENSTER: Mehrfachauswahl beim Personal
+  // (Fahrzeug zuweisen / Lehrgänge vormerken für mehrere Personen auf einmal)
+  // =====================================================================
+  function runPersonnelMulti() {
+    if (!settings.personnelMulti) return;
+    const table = document.getElementById('personal');
+    if (!table) return;
+    const rows = () => [...table.querySelectorAll('tbody tr[userpersonalid]')];
+    const idOf = tr => tr.getAttribute('userpersonalid');
+    const courses = (() => { try { return typeof COURSES !== 'undefined' ? COURSES : []; } catch (e) { return []; } })();
+    const vehicles = () => { try { return typeof USER_DEPARTMENT_VEHICLES !== 'undefined' ? USER_DEPARTMENT_VEHICLES : []; } catch (e) { return []; } };
+    const selected = new Set();
+    let lastIndex = -1, busy = false;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #rh-pm-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 10px; padding:8px 10px;
+        background:#21242b; border-radius:12.5px; font-size:12.5px; }
+      #rh-pm-bar .rh-pm-count { font-weight:700; min-width:90px; }
+      #rh-pm-bar select, #rh-pm-bar button { border:2px solid #b1b1b1; background:transparent; color:#b1b1b1; border-radius:100px;
+        font:700 12px Arial, sans-serif; padding:3px 12px; cursor:pointer; }
+      #rh-pm-bar select { background:#282c35; color:#fff; max-width:240px; }
+      #rh-pm-bar button:hover:not([disabled]) { border-color:#fff; color:#fff; }
+      #rh-pm-bar button.rh-pm-go { border-color:#28a745; color:#28a745; }
+      #rh-pm-bar button.rh-pm-go:hover:not([disabled]) { background:#28a745; color:#fff; }
+      #rh-pm-bar button[disabled] { opacity:.35; cursor:default; }
+      #rh-pm-bar .rh-pm-progress { margin-left:auto; color:#b1b1b1; }
+      #personal .rh-pm-box, #personal .rh-pm-all { width:15px; height:15px; margin:0 8px 0 0; vertical-align:middle;
+        accent-color:#28a745; cursor:pointer; }
+      #personal tr.rh-pm-sel td { background:rgba(40,167,69,.14) !important; }
+      #personal tr > :first-child { white-space:nowrap; }
+    `;
+    document.head.appendChild(style);
+
+    // Kästchen in die erste Zelle setzen – keine neue Spalte, sonst stimmen die Spalten-Nummern des Spiels nicht mehr
+    const thFirst = table.querySelector('thead tr th');
+    thFirst?.insertAdjacentHTML('afterbegin', '<input type="checkbox" class="rh-pm-all" title="Alle auswählen">');
+    function addBoxes() {
+      rows().forEach(tr => {
+        if (tr.querySelector('.rh-pm-box') || !tr.cells[0]) return;
+        tr.cells[0].insertAdjacentHTML('afterbegin', '<input type="checkbox" class="rh-pm-box" title="Auswählen (Shift = Bereich)">');
+      });
+    }
+    addBoxes();
+    new MutationObserver(addBoxes).observe(table.querySelector('tbody') || table, { childList: true });
+
+    const bar = document.createElement('div');
+    bar.id = 'rh-pm-bar';
+    bar.innerHTML = `
+      <span class="rh-pm-count"></span>
+      <select class="rh-pm-pick" title="Personen nach Merkmal auswählen">
+        <option value="">Auswählen …</option>
+        <option value="all">Alle</option>
+        <option value="none">Keine</option>
+        <option value="noveh">Ohne zugeordnetes Fahrzeug</option>
+        <option value="veh">Mit zugeordnetem Fahrzeug</option>
+        ${courses.map(c => `<option value="nocourse:${c.id}">Ohne Lehrgang „${c.name}“</option>`).join('')}
+      </select>
+      <button class="rh-pm-go" data-pm="assign">Fahrzeug zuweisen</button>
+      <button class="rh-pm-go" data-pm="courses">Lehrgänge vormerken</button>
+      <span class="rh-pm-progress"></span>`;
+    table.parentNode.insertBefore(bar, table);
+
+    function sync() {
+      const valid = new Set(rows().map(idOf));
+      [...selected].forEach(id => { if (!valid.has(id)) selected.delete(id); });
+      rows().forEach(tr => {
+        const on = selected.has(idOf(tr));
+        tr.classList.toggle('rh-pm-sel', on);
+        const box = tr.querySelector('.rh-pm-box');
+        if (box) box.checked = on;
+      });
+      const all = table.querySelector('.rh-pm-all');
+      if (all) { all.checked = selected.size > 0 && selected.size === rows().length; all.indeterminate = selected.size > 0 && !all.checked; }
+      bar.querySelector('.rh-pm-count').textContent = `${selected.size} ausgewählt`;
+      bar.querySelectorAll('[data-pm]').forEach(b => { b.disabled = busy || !selected.size; });
+    }
+
+    table.addEventListener('mousedown', e => { if (e.shiftKey && e.target.closest('.rh-pm-box')) e.preventDefault(); });
+    table.addEventListener('click', e => {
+      const all = e.target.closest('.rh-pm-all');
+      if (all) { rows().forEach(tr => all.checked ? selected.add(idOf(tr)) : selected.delete(idOf(tr))); return sync(); }
+      const box = e.target.closest('.rh-pm-box');
+      if (!box) return;
+      const list = rows(), tr = box.closest('tr'), i = list.indexOf(tr);
+      if (e.shiftKey && lastIndex >= 0) { // Bereich von der letzten Auswahl bis hier
+        const [a, b] = [Math.min(lastIndex, i), Math.max(lastIndex, i)];
+        list.slice(a, b + 1).forEach(r => box.checked ? selected.add(idOf(r)) : selected.delete(idOf(r)));
+      } else box.checked ? selected.add(idOf(tr)) : selected.delete(idOf(tr));
+      lastIndex = i;
+      sync();
+    });
+
+    const hasVehicle = tr => !!tr.querySelector('.editAssignedVehicle')?.getAttribute('assigneduservehicleid');
+    bar.querySelector('.rh-pm-pick').addEventListener('change', e => {
+      const v = e.target.value;
+      e.target.value = '';
+      if (!v) return;
+      if (v === 'none') selected.clear();
+      else rows().forEach(tr => {
+        let take = v === 'all';
+        if (v === 'noveh') take = !hasVehicle(tr);
+        if (v === 'veh') take = hasVehicle(tr);
+        if (v.startsWith('nocourse:')) take = !tr.querySelector(`[solvedcourseid="${v.slice(9)}"]`);
+        if (take) selected.add(idOf(tr));
+      });
+      sync();
+    });
+
+    // Aufruf der Spiel-Schnittstelle als Promise (mit Zeitlimit, falls keine Antwort kommt)
+    const api = data => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Zeitüberschreitung')), 15000);
+      try {
+        callApi('api/userPersonal', data, r => { clearTimeout(timer); resolve(r); }, false, err => { clearTimeout(timer); reject(err); });
+      } catch (err) { clearTimeout(timer); reject(err); }
+    });
+
+    async function runBatch(ids, makeData, label) {
+      busy = true; sync();
+      const progress = bar.querySelector('.rh-pm-progress');
+      let ok = 0, failed = 0;
+      for (const [n, id] of ids.entries()) {
+        progress.textContent = `${label} … ${n + 1} / ${ids.length}`;
+        try { await api(makeData(id)); ok++; } catch (e) { failed++; console.warn('[ReSi-Helfer] Personal', id, e); }
+        await new Promise(r => setTimeout(r, 150)); // Server schonen
+      }
+      progress.textContent = `${ok} erledigt${failed ? `, ${failed} fehlgeschlagen` : ''} – lade neu …`;
+      setTimeout(() => location.reload(), failed ? 2500 : 900);
+    }
+
+    // Eingaben im Spiel-Fenster lesen (das Fenster liegt bei geöffnetem Wachenfenster in der Leitstelle)
+    const modalDoc = () => (window.top === window ? document : window.parent.document);
+
+    bar.addEventListener('click', e => {
+      const act = e.target.closest('[data-pm]')?.dataset.pm;
+      if (!act || busy || !selected.size) return;
+      const ids = [...selected];
+      const n = ids.length;
+
+      if (act === 'assign') {
+        const vs = vehicles();
+        const html = `<div style="text-align:left" id="rh-pm-vehs">
+          <div><input type="radio" name="rh-pm-veh" id="rh-pm-veh-null" value="null" checked>
+            <label for="rh-pm-veh-null">Kein Fahrzeug (Zuordnung aufheben)</label></div>
+          ${vs.map(v => `<div><input type="radio" name="rh-pm-veh" id="rh-pm-veh-${v.userVehicleID}" value="${v.userVehicleID}">
+            <label for="rh-pm-veh-${v.userVehicleID}">${v.name} (${v.typ}) – ${v.assignedPersonal.length}/${v.maxPersonal}</label></div>`).join('')}
+        </div>`;
+        let box = null; // Inhalt des Spiel-Fensters merken: beim Speichern ist er schon entfernt
+        modal(`Fahrzeug zuweisen – ${n} ${n === 1 ? 'Person' : 'Personen'}`, html, 'Zuweisen', 'Abbrechen', () => {
+          const val = box?.querySelector('[name="rh-pm-veh"]:checked')?.value || 'null';
+          if (val !== 'null') {
+            const v = vs.find(x => String(x.userVehicleID) === val);
+            const already = v ? v.assignedPersonal.filter(p => ids.includes(String(p))).length : 0;
+            const free = v ? v.maxPersonal - v.assignedPersonal.length + already : n;
+            if (v && n > free && !confirm(`${v.name} hat nur noch ${Math.max(0, free)} freie Plätze, du hast ${n} Personen ausgewählt. Trotzdem zuweisen?`)) return;
+          }
+          runBatch(ids, id => ({ action: 'assignVehicle', userPersonalID: +id, userVehicleID: val }), 'Weise zu');
+        });
+        box = modalDoc().getElementById('rh-pm-vehs');
+      }
+
+      if (act === 'courses') {
+        const html = `<div style="text-align:left" id="rh-pm-courses">
+          ${courses.map(c => `<div><input type="checkbox" id="rh-pm-c-${c.id}" value="${c.id}">
+            <label for="rh-pm-c-${c.id}">${c.name} (${c.duration} Tage)</label></div>`).join('')}
+          <hr style="opacity:.2">
+          <div><input type="radio" name="rh-pm-mode" id="rh-pm-mode-add" value="add" checked><label for="rh-pm-mode-add">Zu bereits vorgemerkten hinzufügen</label></div>
+          <div><input type="radio" name="rh-pm-mode" id="rh-pm-mode-set" value="set"><label for="rh-pm-mode-set">Vormerkungen ersetzen</label></div>
+          <div><input type="radio" name="rh-pm-mode" id="rh-pm-mode-del" value="del"><label for="rh-pm-mode-del">Diese Vormerkungen entfernen</label></div>
+          <small style="opacity:.7">Bereits abgeschlossene Lehrgänge werden automatisch ausgelassen.</small>
+        </div>`;
+        let box = null; // Inhalt des Spiel-Fensters merken: beim Speichern ist er schon entfernt
+        modal(`Lehrgänge vormerken – ${n} ${n === 1 ? 'Person' : 'Personen'}`, html, 'Speichern', 'Abbrechen', () => {
+          const chosen = [...(box?.querySelectorAll('input[type="checkbox"]:checked') || [])].map(x => x.value);
+          const mode = box?.querySelector('[name="rh-pm-mode"]:checked')?.value || 'add';
+          if (!chosen.length && mode !== 'set') return; // nichts angehakt
+          runBatch(ids, id => {
+            const tr = table.querySelector(`tr[userpersonalid="${id}"]`);
+            const planned = [...tr.querySelectorAll('[plannedcourseid]')].map(x => x.getAttribute('plannedcourseid'));
+            const solved = new Set([...tr.querySelectorAll('[solvedcourseid]')].map(x => x.getAttribute('solvedcourseid')));
+            let next = mode === 'set' ? chosen : mode === 'del' ? planned.filter(c => !chosen.includes(c)) : [...new Set([...planned, ...chosen])];
+            next = next.filter(c => !solved.has(c));
+            return { action: 'planCourse', userPersonalID: id, courseIDs: JSON.stringify(next) };
+          }, 'Speichere Lehrgänge');
+        });
+        box = modalDoc().getElementById('rh-pm-courses');
+      }
+    });
+
+    sync();
+  }
+
+  // =====================================================================
   // WACHENFENSTER: freies Personal neben "Personal x / y"
   // =====================================================================
   function runDepartmentFrame() {
+    runPersonnelMulti();
     if (!settings.personnel) return;
     const count = document.getElementById('countUserPersonals');
     const holder = count.parentElement;
