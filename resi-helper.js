@@ -91,6 +91,27 @@
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const normCall = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); // Funkrufnamen vergleichen
 
+  // Reihenfolge, in der Fahrzeugtypen ins Soll aufgenommen wurden: { wachenId: ['typId', …] }
+  const RBO_KEY = 'resiHelfer.realbauOrder';
+  // natürliche Sortierung: "… 10/1" < "… 11/1" < "… 100/1"
+  const callCmp = (a, b) => String(a).localeCompare(String(b), 'de', { numeric: true, sensitivity: 'base' });
+
+  // Sortiert Soll/Ist-Zeilen: erst alle mit Funkrufnamen (vorgemerkt oder vorhanden) nach Funkrufname,
+  // dann geplante ohne Namen in der Reihenfolge des Hinzufügens (neueste unten), zuletzt der Rest.
+  // Zeile: { id, name, s, missing, sortName }
+  function sortRealbauRows(rows, order) {
+    const pos = id => { const k = (order || []).indexOf(String(id)); return k < 0 ? Infinity : k; };
+    const group = r => (r.sortName ? 0 : r.s ? 1 : 2);
+    return rows.sort((a, b) => group(a) - group(b)
+      || (group(a) === 0 ? callCmp(a.sortName, b.sortName) : 0)
+      || (group(a) === 1 && pos(a.id) !== pos(b.id) ? (pos(a.id) < pos(b.id) ? -1 : 1) : 0)
+      || (b.missing > 0) - (a.missing > 0)
+      || a.name.localeCompare(b.name, 'de'));
+  }
+  // Sortiername einer Zeile: erster vorgemerkter Funkrufname, sonst erster Name eines vorhandenen Fahrzeugs dieses Typs
+  const rowSortName = (plannedNames, istNames) =>
+    (plannedNames || []).find(Boolean) || [...(istNames || [])].sort(callCmp)[0] || '';
+
   // =====================================================================
   // Tastenkürzel (gemeinsam für alle Fenster)
   // =====================================================================
@@ -670,7 +691,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.11.0';
+  const VERSION = '0.11.1';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
@@ -1689,10 +1710,19 @@
   // =====================================================================
   let realbau = readJSON(RB_KEY, {});
   let rbNames = readJSON(RBN_KEY, {});
-  const saveRealbau = () => { localStorage.setItem(RB_KEY, JSON.stringify(realbau)); localStorage.setItem(RBN_KEY, JSON.stringify(rbNames)); };
+  let rbOrder = readJSON(RBO_KEY, {});
+  const saveRealbau = () => {
+    localStorage.setItem(RB_KEY, JSON.stringify(realbau));
+    localStorage.setItem(RBN_KEY, JSON.stringify(rbNames));
+    localStorage.setItem(RBO_KEY, JSON.stringify(rbOrder));
+  };
+  // Typ ans Ende der Reihenfolge setzen (neu aufgenommen) bzw. entfernen (Soll auf 0)
+  const orderAdd = (b, v) => { const o = (rbOrder[b] ||= []); if (!o.includes(String(v))) o.push(String(v)); };
+  const orderDel = (b, v) => { if (rbOrder[b]) rbOrder[b] = rbOrder[b].filter(x => x !== String(v)); };
   let rbBuildings = null, rbVehicles = null, rbLoading = null, rbError = '', rbLoaded = 0;
   const rbCatalog = {};      // Gebäudetyp -> [{ id, name, task, coins }]
   const rbOpen = new Set();  // aufgeklappte Wachen
+  let rbAutoOpened = false;  // wurde schon einmal automatisch aufgeklappt?
 
   // Fahrzeugkatalog aus dem Shop der Wache (nur lesen), je Gebäudetyp einen Tag zwischengespeichert
   const loadShop = (building, force) => shopCatalog(building.userBuildingID, building.buildingType, force);
@@ -1732,17 +1762,19 @@
     const ist = rbIst(b.userBuildingID);
     const names = rbNames[b.userBuildingID] || {};
     // Funkrufnamen der vorhandenen Fahrzeuge dieser Wache – vorgemerkte Namen, die es schon gibt, gelten als erledigt
-    const existing = new Set((rbVehicles || []).filter(v => String(v.userBuildingID) === String(b.userBuildingID))
-      .map(v => normCall(v.userVehicleName)));
+    const stationVehicles = (rbVehicles || []).filter(v => String(v.userBuildingID) === String(b.userBuildingID));
+    const existing = new Set(stationVehicles.map(v => normCall(v.userVehicleName)));
     const ids = [...new Set([...Object.keys(soll).map(Number), ...ist.keys()])];
-    const rows = ids.map(id => {
+    const rows = sortRealbauRows(ids.map(id => {
       const s = +soll[id] || 0, i = ist.get(id) || 0, v = byId.get(id) || { id, name: `Typ ${id}`, task: '', coins: 0 };
       const calls = Array.from({ length: s }, (_, k) => {
         const n = (names[id] || [])[k] || '';
         return { n, here: !!n && existing.has(normCall(n)) };
       });
-      return { ...v, s, i, calls, missing: Math.max(0, s - i), extra: s ? Math.max(0, i - s) : 0 };
-    }).sort((a, b) => (b.s > 0) - (a.s > 0) || a.name.localeCompare(b.name, 'de'));
+      const sortName = rowSortName((names[id] || []).slice(0, s),
+        stationVehicles.filter(x => x.vehicleID === id).map(x => x.userVehicleName));
+      return { ...v, id, s, i, calls, sortName, missing: Math.max(0, s - i), extra: s ? Math.max(0, i - s) : 0 };
+    }), rbOrder[b.userBuildingID]);
     const sollSum = rows.reduce((t, r) => t + r.s, 0);
     const done = rows.reduce((t, r) => t + Math.min(r.s, r.i), 0);
     const cost = rows.reduce((t, r) => t + r.missing * r.coins, 0);
@@ -1760,7 +1792,11 @@
     const stations = rbBuildings
       .filter(b => (rbCatalog[b.buildingType] || []).length) // nur Gebäude mit Fahrzeugen
       .map(b => ({ b, r: rbStation(b) }));
-    if (stations.length <= 3 && !rbOpen.size) stations.forEach(s => rbOpen.add(String(s.b.userBuildingID)));
+    // nur beim ersten Anzeigen alle aufklappen (bei wenigen Wachen) – danach entscheidet allein der Nutzer
+    if (!rbAutoOpened) {
+      rbAutoOpened = true;
+      if (stations.length <= 3 && !rbOpen.size) stations.forEach(s => rbOpen.add(String(s.b.userBuildingID)));
+    }
 
     const planned = stations.filter(s => s.r.planned);
     const sollAll = planned.reduce((t, s) => t + s.r.sollSum, 0);
@@ -1838,12 +1874,14 @@
   window.__rhOpenRealbau = buildingId => {
     rbOpen.clear();
     rbOpen.add(String(buildingId));
+    rbAutoOpened = true;
     openCenter('realbau');
   };
   // Wurde das Soll in einem anderen Fenster geändert, neu einlesen
   window.addEventListener('storage', e => {
     if (e.key === RB_KEY) realbau = readJSON(RB_KEY, {});
     if (e.key === RBN_KEY) rbNames = readJSON(RBN_KEY, {});
+    if (e.key === RBO_KEY) rbOrder = readJSON(RBO_KEY, {});
   });
 
   function onRealbauClick(el) {
@@ -1851,11 +1889,11 @@
     if (tog) { rbOpen.has(tog) ? rbOpen.delete(tog) : rbOpen.add(tog); return renderCenter(); }
     const act = el.dataset.rbAct, b = el.dataset.b, v = el.dataset.v;
     const soll = (realbau[b] ||= {});
-    if (act === 'inc') soll[v] = (+soll[v] || 0) + 1;
-    else if (act === 'dec') { soll[v] = Math.max(0, (+soll[v] || 0) - 1); if (!soll[v]) delete soll[v]; }
+    if (act === 'inc') { if (!soll[v]) orderAdd(b, v); soll[v] = (+soll[v] || 0) + 1; }
+    else if (act === 'dec') { soll[v] = Math.max(0, (+soll[v] || 0) - 1); if (!soll[v]) { delete soll[v]; orderDel(b, v); } }
     else if (act === 'add') {
       const id = document.querySelector(`#rh-cc [data-rb-sel="${b}"]`)?.value;
-      if (id) soll[id] = (+soll[id] || 0) + 1;
+      if (id) { if (!soll[id]) orderAdd(b, id); soll[id] = (+soll[id] || 0) + 1; }
     } else if (act === 'fromIst') {
       if (Object.keys(soll).length && !confirm('Das bisherige Soll dieser Wache durch den aktuellen Bestand ersetzen?')) return;
       realbau[b] = Object.fromEntries(rbIst(b));
@@ -1864,10 +1902,12 @@
       (rbVehicles || []).filter(x => String(x.userBuildingID) === String(b))
         .forEach(x => (byType[x.vehicleID] ||= []).push(x.userVehicleName));
       rbNames[b] = byType;
+      rbOrder[b] = Object.keys(realbau[b]);
     } else if (act === 'clear') {
       if (!confirm('Soll dieser Wache wirklich leeren?')) return;
       delete realbau[b];
       delete rbNames[b];
+      delete rbOrder[b];
     } else if (act === 'reload') { loadRealbau(true); return renderCenter(); }
     if (realbau[b] && !Object.keys(realbau[b]).length) delete realbau[b];
     saveRealbau();
@@ -1905,7 +1945,7 @@
     if (act === 'keysDefault') { settings.keys = Object.assign({}, DEFAULTS.keys); ccRecording = null; return afterChange(); }
     if (act === 'resetDay') { daily = { date: todayStr(), earned: 0, finished: 0 }; saveDaily(); renderHeaderStats(); return renderCenter(); }
     if (act === 'export') {
-      const data = { app: 'resi-helfer', version: VERSION, settings, notes, realbau, realbauNames: rbNames, exported: new Date().toISOString() };
+      const data = { app: 'resi-helfer', version: VERSION, settings, notes, realbau, realbauNames: rbNames, realbauOrder: rbOrder, exported: new Date().toISOString() };
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
       a.download = `resi-helfer-sicherung-${todayStr()}.json`;
@@ -1925,6 +1965,7 @@
           localStorage.setItem(NOTES_KEY, JSON.stringify(data.notes || {}));
           if (data.realbau) localStorage.setItem(RB_KEY, JSON.stringify(data.realbau));
           if (data.realbauNames) localStorage.setItem(RBN_KEY, JSON.stringify(data.realbauNames));
+          if (data.realbauOrder) localStorage.setItem(RBO_KEY, JSON.stringify(data.realbauOrder));
           location.reload();
         } catch (err) { alert('Import fehlgeschlagen: ' + err.message); }
       };
@@ -1933,7 +1974,7 @@
     }
     if (act === 'reset') {
       if (!confirm('Alle ReSi-Helfer-Einstellungen, Wachen-Notizen und den Tageszähler löschen?')) return;
-      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY, TX_KEY, RB_KEY, RBN_KEY].forEach(k => localStorage.removeItem(k));
+      [SETTINGS_KEY, NOTES_KEY, DAILY_KEY, TX_KEY, RB_KEY, RBN_KEY, RBO_KEY].forEach(k => localStorage.removeItem(k));
       location.reload();
       return;
     }
@@ -2497,7 +2538,11 @@
 
     const style = document.createElement('style');
     style.textContent = `
-      .rh-rbd .card-headline { display:flex; align-items:center; gap:10px; }
+      .rh-rbd .card-headline { display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none; }
+      .rh-rbd .rh-rbd-caret { transition:transform .15s; }
+      .rh-rbd.rh-collapsed .rh-rbd-caret { transform:rotate(-90deg); }
+      .rh-rbd.rh-collapsed .card-body { display:none; }
+      .rh-rbd.rh-collapsed .card-headline { border-radius:15px; }
       .rh-rbd .rh-rbd-prog { margin-left:auto; font-weight:700; }
       .rh-rbd .rh-rbd-bar { width:110px; height:6px; border-radius:3px; background:rgba(0,0,0,.3); overflow:hidden; }
       .rh-rbd .rh-rbd-bar i { display:block; height:100%; background:#fff; }
@@ -2543,17 +2588,19 @@
       vehicles.forEach(v => ist.set(v.vehicleID, (ist.get(v.vehicleID) || 0) + 1));
       const existing = new Set(vehicles.map(v => normCall(v.userVehicleName)));
       const ids = [...new Set([...Object.keys(soll).map(Number), ...ist.keys()])];
-      const rows = ids.map(id => {
+      const rows = sortRealbauRows(ids.map(id => {
         const s = +soll[id] || 0, i = ist.get(id) || 0, v = byId.get(id) || { name: `Typ ${id}`, task: '', coins: 0 };
         const calls = ((names[id] || []).slice(0, s)).filter(Boolean).map(n => ({ n, here: existing.has(normCall(n)) }));
-        return { ...v, s, i, calls, missing: Math.max(0, s - i) };
-      }).sort((a, b) => (b.s > 0) - (a.s > 0) || (b.missing > 0) - (a.missing > 0) || a.name.localeCompare(b.name, 'de'));
+        const sortName = rowSortName((names[id] || []).slice(0, s), vehicles.filter(x => x.vehicleID === id).map(x => x.userVehicleName));
+        return { ...v, id, s, i, calls, sortName, missing: Math.max(0, s - i) };
+      }), readJSON(RBO_KEY, {})[buildingId]);
       const sollSum = rows.reduce((t, r) => t + r.s, 0);
       const done = rows.reduce((t, r) => t + Math.min(r.s, r.i), 0);
       const cost = rows.reduce((t, r) => t + r.missing * r.coins, 0);
 
       head.innerHTML = `<span>Realbau – Soll/Ist</span>${sollSum ? `<span class="rh-rbd-prog">${done} / ${sollSum}</span>
-        <span class="rh-rbd-bar"><i style="width:${Math.round(done / sollSum * 100)}%"></i></span>` : ''}`;
+        <span class="rh-rbd-bar"><i style="width:${Math.round(done / sollSum * 100)}%"></i></span>` : '<span class="rh-rbd-prog"></span>'}
+        <span class="rh-rbd-caret" title="Ein-/ausklappen">▾</span>`;
 
       if (!sollSum) {
         body.innerHTML = `<div class="rh-rbd-sum">Für diese Wache ist noch kein Soll hinterlegt.</div>
@@ -2581,6 +2628,14 @@
         <div class="rh-rbd-foot"><button class="button button-round button-success button-xs" data-rbd="edit">Soll bearbeiten</button></div>`;
     }
 
+    // Ein-/Ausklappen über die Kopfzeile, Zustand für alle Wachen merken
+    const OPEN_KEY = 'resiHelfer.realbauDeptOpen';
+    const applyOpen = () => card.classList.toggle('rh-collapsed', localStorage.getItem(OPEN_KEY) === '0');
+    head.addEventListener('click', () => {
+      localStorage.setItem(OPEN_KEY, card.classList.contains('rh-collapsed') ? '1' : '0');
+      applyOpen();
+    });
+    applyOpen();
     card.addEventListener('click', e => { if (e.target.closest('[data-rbd="edit"]')) openEditor(); });
     // Änderungen im Kontrollzentrum sofort übernehmen
     window.addEventListener('storage', e => { if (e.key === RB_KEY || e.key === RBN_KEY) render(); });
