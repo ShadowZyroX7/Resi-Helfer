@@ -703,7 +703,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.12.0';
+  const VERSION = '0.12.1';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
@@ -2701,6 +2701,12 @@
       .rh-rbd .rh-rbd-calls { display:flex; flex-wrap:wrap; gap:4px; margin-top:3px; }
       .rh-rbd .rh-rbd-call { font-size:11px; padding:0 8px; border-radius:100px; background:#3c414b; color:#ddd; white-space:nowrap; }
       .rh-rbd .rh-rbd-call.rh-here { background:rgba(40,167,69,.25); color:#7ee29a; }
+      .rh-rbd .rh-rbd-call { display:inline-flex; align-items:center; gap:4px; }
+      .rh-rbd .rh-rbd-copy { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; margin-right:-5px;
+        padding:0; border:0; border-radius:100px; background:transparent; color:inherit; opacity:.65; cursor:pointer; font-size:10px; }
+      .rh-rbd .rh-rbd-copy:hover { opacity:1; background:rgba(255,255,255,.12); }
+      .rh-rbd .rh-rbd-copy.rh-done { opacity:1; color:#28a745; font-weight:700; }
+      .rh-rbd .rh-rbd-copy svg { width:10px; height:10px; }
       .rh-rbd .rh-rbd-cost { text-align:right; color:#ff4d4d; white-space:nowrap; }
       .rh-rbd .rh-rbd-foot { display:flex; justify-content:flex-end; margin-top:10px; }
     `;
@@ -2773,7 +2779,7 @@
             <tr>
               <td><b>${esc(r.name)}</b>${r.task ? ` <span style="opacity:.6;font-size:.85em">${esc(r.task)}</span>` : ''}
                 ${r.calls.length ? `<div class="rh-rbd-calls">${r.calls.map(c =>
-                  `<span class="rh-rbd-call${c.here ? ' rh-here' : ''}" title="${c.here ? 'Ein Fahrzeug mit diesem Funkrufnamen steht schon an der Wache' : 'Vorgemerkter Funkrufname'}">${c.here ? '✓ ' : ''}${esc(c.n)}</span>`).join('')}</div>` : ''}</td>
+                  `<span class="rh-rbd-call${c.here ? ' rh-here' : ''}" title="${c.here ? 'Ein Fahrzeug mit diesem Funkrufnamen steht schon an der Wache' : 'Vorgemerkter Funkrufname'}">${c.here ? '✓ ' : ''}${esc(c.n)}<button type="button" class="rh-rbd-copy" data-copy="${esc(c.n)}" title="Funkrufnamen kopieren">${faIcon('copy')}</button></span>`).join('')}</div>` : ''}</td>
               <td><b>${r.i} / ${r.s}</b></td>
               <td>${!r.s ? '<span class="rh-rbd-chip rh-gray">nicht im Soll</span>'
                 : r.missing ? `<span class="rh-rbd-chip rh-red">fehlt ${r.missing}</span>` : '<span class="rh-rbd-chip rh-green">✓</span>'}</td>
@@ -2781,6 +2787,7 @@
             </tr>`).join('')}</tbody>
         </table>
         <div class="rh-rbd-foot"><button class="button button-round button-success button-xs" data-rbd="edit">Soll bearbeiten</button></div>`;
+      renderFa(body); // Kopier-Symbole aus der Font-Awesome-Bibliothek des Spiels
     }
 
     // Ein-/Ausklappen über die Kopfzeile, Zustand für alle Wachen merken
@@ -2791,7 +2798,38 @@
       applyOpen();
     });
     applyOpen();
-    card.addEventListener('click', e => { if (e.target.closest('[data-rbd="edit"]')) openEditor(); });
+    // Funkrufnamen in die Zwischenablage kopieren (mit Ersatzweg, falls die Zwischenablage gesperrt ist)
+    async function copyText(text) {
+      try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* Ersatzweg */ }
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { /* nichts */ }
+      ta.remove();
+      return ok;
+    }
+    card.addEventListener('click', async e => {
+      const copy = e.target.closest('[data-copy]');
+      if (copy) {
+        e.stopPropagation();
+        const ok = await copyText(copy.dataset.copy);
+        copy.innerHTML = ok ? '✓' : '✗';
+        copy.classList.toggle('rh-done', ok);
+        copy.title = ok ? 'Kopiert!' : 'Kopieren nicht möglich';
+        setTimeout(() => {
+          copy.innerHTML = faIcon('copy');
+          copy.classList.remove('rh-done');
+          copy.title = 'Funkrufnamen kopieren';
+          renderFa(copy);
+        }, 1400);
+        return;
+      }
+      if (e.target.closest('[data-rbd="edit"]')) openEditor();
+    });
     // Änderungen im Kontrollzentrum sofort übernehmen
     window.addEventListener('storage', e => { if (e.key === RB_KEY || e.key === RBN_KEY) render(); });
     render();
