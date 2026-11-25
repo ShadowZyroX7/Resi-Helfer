@@ -397,8 +397,11 @@
 
   // Einsatztypen + Fahrzeugkategorien vom Spiel (für die Einsatzinfos)
   let missionTypesByName = null;
+  // Namen robust vergleichen: manche Einsatztypen haben im Spiel z. B. ein Leerzeichen am Anfang
+  // (" Austritt Kohlenstoffmonoxid") – also Leerzeichen und Groß-/Kleinschreibung angleichen
+  const normName = s => String(s || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
   fetch('/api/missions').then(r => r.json()).then(types => {
-    missionTypesByName = new Map(Object.values(types).map(t => [t.name, t]));
+    missionTypesByName = new Map(Object.values(types).map(t => [normName(t.name), t]));
     decorateMissions();
   }).catch(e => console.warn('[ReSi-Helfer] Einsatztypen nicht geladen', e));
 
@@ -408,7 +411,7 @@
 
   function renderMissionInfo(m) {
     let info = m.querySelector('.rh-minfo');
-    const type = settings.missionInfo && missionTypesByName?.get(missionName(m));
+    const type = settings.missionInfo && missionTypesByName?.get(normName(missionName(m)));
     if (!type) { info?.remove(); return; }
     if (info?.dataset.k === String(type.id)) return;
     if (!info) {
@@ -488,7 +491,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.9.2';
+  const VERSION = '0.9.3';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
