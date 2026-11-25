@@ -32,6 +32,10 @@
     listBar: true,           // Filterleiste über der Fahrzeugliste anzeigen
     listMaxKm: 0,            // Fahrzeugliste: max. Entfernung in km (0 = alle)
     missionInfo: true,       // Einsatzliste: Vergütung
+    missionSortBar: true,    // Sortier-Auswahl über der Einsatzliste
+    missionSort: 'default',  // default | unalarmed | time | credits | distance
+    sharedMine: true,        // Freigaben: Symbol mit Anzahl eigener alarmierter Fahrzeuge
+    sharedEnough: 4,         // ab so vielen eigenen Fahrzeugen gilt eine Freigabe als versorgt
     headerStats: true,       // Statistik-Leiste in der Kopfzeile
     countdownSoon: 30,       // Countdown wird ab so vielen Sekunden grün
     statusShowAll: false,    // Statusleiste: auch leere Status 5–8 zeigen
@@ -438,9 +442,11 @@
           nameEl.appendChild(cd);
         }
         renderMissionInfo(m);
+        renderMine(m);
       }
     }
     tickCountdowns();
+    applyMissionSort();
   }
 
   function tickCountdowns() {
@@ -461,6 +467,147 @@
       }
     }
   }
+
+  // =====================================================================
+  // Einsatzliste sortieren + eigene Fahrzeuge bei Verbandsfreigaben
+  // =====================================================================
+  const SORTS = [
+    ['default',   'Wie im Spiel'],
+    ['unalarmed', 'Unalarmierte zuerst'],
+    ['time',      'Restzeit (kürzeste zuerst)'],
+    ['credits',   'Vergütung (höchste zuerst)'],
+    ['distance',  'Entfernung (nächste zuerst)'],
+  ];
+  let ownByMission = new Map();   // Einsatz-ID -> Anzahl eigener Fahrzeuge
+  let buildingSpots = [];         // Standorte deiner Wachen (für "Entfernung")
+  const firstSeen = new Map(); let seenCounter = 0;
+
+  const sortCss = document.createElement('style');
+  sortCss.textContent = `
+    /* width:0 + flex:1: die Auswahl richtet sich nach der Spalte, statt sie mit langen Texten breiter zu drücken */
+    #rh-sortbar { display:flex; align-items:center; gap:8px; min-width:0; padding:6px 12px 2px; font-size:12px; color:#b1b1b1; }
+    #rh-sortbar select { flex:1 1 0; width:0; min-width:0; text-overflow:ellipsis; background:#21242b; color:#fff; border:2px solid #b1b1b1; border-radius:100px;
+      padding:2px 10px; font:700 12px Arial, sans-serif; cursor:pointer; outline:none; }
+    #rh-sortbar select:focus { border-color:#28a745; }
+    .rh-mine { display:inline-flex; align-items:center; gap:4px; margin-top:3px; padding:0 7px; border-radius:20px;
+      background:#3c414b; color:#fff; font-size:10.5px; font-weight:700; line-height:16px; cursor:default; }
+    .rh-mine svg { width:11px; height:11px; }
+    .rh-mine.rh-enough { background:#28a745; }
+  `;
+  document.head.appendChild(sortCss);
+
+  // Sortier-Auswahl unter den Reitern "Einsätze | Freigaben"
+  const sortBar = document.createElement('div');
+  sortBar.id = 'rh-sortbar';
+  sortBar.innerHTML = `<span>Sortieren:</span><select title="Einsatzliste sortieren">
+    ${SORTS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>`;
+  document.querySelector('#missions .panel-headline')?.after(sortBar);
+  const sortSelect = sortBar.querySelector('select');
+  sortSelect.addEventListener('change', () => {
+    settings.missionSort = sortSelect.value;
+    saveSettings();
+    if (settings.missionSort === 'distance' && !buildingSpots.length) loadBuildingSpots();
+    applyMissionSort();
+  });
+
+  async function loadOwnVehicles() {
+    if (!settings.sharedMine && settings.missionSort === 'default') return;
+    try {
+      const list = await fetch('/api/userVehicles').then(r => r.json());
+      const map = new Map();
+      list.forEach(v => { if (v.userMissionID) map.set(String(v.userMissionID), (map.get(String(v.userMissionID)) || 0) + 1); });
+      ownByMission = map;
+      decorateMissions();
+    } catch (e) { console.warn('[ReSi-Helfer] userVehicles fehlgeschlagen', e); }
+  }
+  async function loadBuildingSpots() {
+    try {
+      const list = await fetch('/api/userBuildings').then(r => r.json());
+      buildingSpots = list.map(b => b.location).filter(l => l && isFinite(l.lat) && isFinite(l.lng));
+      applyMissionSort();
+    } catch (e) { console.warn('[ReSi-Helfer] userBuildings fehlgeschlagen', e); }
+  }
+  // Luftlinie in km zur nächsten eigenen Wache
+  function nearestKm(lat, lng) {
+    if (!buildingSpots.length || !isFinite(lat) || !isFinite(lng)) return Infinity;
+    const rad = x => x * Math.PI / 180;
+    return Math.min(...buildingSpots.map(b => {
+      const dLat = rad(b.lat - lat), dLng = rad(b.lng - lng);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+      return 12742 * Math.asin(Math.sqrt(a));
+    }));
+  }
+
+  const enoughLimit = () => Math.max(1, +settings.sharedEnough || 1);
+
+  // Symbol "deine Fahrzeuge" an Freigaben
+  function renderMine(m) {
+    let chip = m.querySelector('.rh-mine');
+    const shared = m.closest('#missions-container-shared');
+    const n = ownByMission.get(m.getAttribute('usermissionid')) || 0;
+    if (!settings.sharedMine || !shared || !n) { chip?.remove(); return; }
+    const enough = n >= enoughLimit();
+    const key = `${n}|${enough}`;
+    if (chip?.dataset.k === key) return;
+    if (!chip) {
+      chip = document.createElement('span');
+      chip.className = 'rh-mine';
+      m.querySelector('.mission-list-text')?.appendChild(chip);
+    }
+    chip.dataset.k = key;
+    chip.classList.toggle('rh-enough', enough);
+    chip.title = `Du hast ${n} ${n === 1 ? 'Fahrzeug' : 'Fahrzeuge'} alarmiert` +
+      (enough ? ` – versorgt (ab ${enoughLimit()})` : ` – versorgt ab ${enoughLimit()}`);
+    chip.innerHTML = `${faIcon('truck')} ${enough ? '✓ ' : ''}${n}`;
+    renderFa(chip);
+  }
+
+  // Sortiert, indem die Einträge in der passenden Reihenfolge neu angehängt werden.
+  // Nur wenn sich die Reihenfolge wirklich ändert – sonst würde jede Änderung eine neue auslösen.
+  function applyMissionSort() {
+    if (sortSelect.value !== (settings.missionSort || 'default')) sortSelect.value = settings.missionSort || 'default';
+    sortBar.style.display = settings.missionSortBar ? '' : 'none';
+    const mode = settings.missionSortBar ? (settings.missionSort || 'default') : 'default';
+    const now = Date.now();
+    for (const c of missionContainers) {
+      const shared = c.id === 'missions-container-shared';
+      const items = [...c.children].filter(el => el.classList.contains('mission-list-mission'));
+      if (items.length < 2) continue;
+      // Reihenfolge des Spiels merken (wann wir einen Einsatz zuerst gesehen haben) – für 'Wie im Spiel' und Gleichstand
+      items.forEach(el => { const id = el.getAttribute('usermissionid'); if (!firstSeen.has(id)) firstSeen.set(id, seenCounter++); });
+      const keyOf = el => {
+        const id = el.getAttribute('usermissionid');
+        const live = window.ControlCenter?.missions?.[id] || {};
+        // versorgte Freigaben immer ans Ende
+        const enough = shared && settings.sharedMine && (ownByMission.get(id) || 0) >= enoughLimit() ? 1 : 0;
+        let primary = 0;
+        if (mode === 'unalarmed') primary = live.status === 1 ? 0 : 1;
+        else if (mode === 'time') {
+          const left = live.finishTime ? Date.parse(live.finishTime) - now : NaN;
+          primary = left > 0 ? left : Infinity;
+        } else if (mode === 'credits') {
+          const t = missionTypesByName?.get(normName(missionName(el)));
+          primary = t ? -(t.maxCredits || t.credits || 0) : Infinity;
+        } else if (mode === 'distance') primary = nearestKm(+live.lat, +live.lng);
+        return [enough, primary];
+      };
+      const keyed = items.map(el => ({ el, i: firstSeen.get(el.getAttribute('usermissionid')), k: keyOf(el) }));
+      keyed.sort((a, b) => (a.k[0] - b.k[0]) || (a.k[1] === b.k[1] ? 0 : a.k[1] < b.k[1] ? -1 : 1) || (a.i - b.i));
+      if (keyed.every((x, i) => x.el === items[i])) continue; // schon richtig sortiert
+      const frag = document.createDocumentFragment();
+      keyed.forEach(x => frag.appendChild(x.el));
+      c.appendChild(frag);
+    }
+  }
+
+  setInterval(loadOwnVehicles, 20000);
+  setInterval(applyMissionSort, 5000); // Restzeiten ändern sich laufend
+  try {
+    let t = null;
+    window.socket?.on('vehicleFMS', () => { clearTimeout(t); t = setTimeout(loadOwnVehicles, 1500); });
+  } catch (e) { /* ohne Socket reicht das Intervall */ }
+  loadOwnVehicles();
+  if (settings.missionSort === 'distance') loadBuildingSpots();
 
   missionContainers.forEach(c => observe(c, decorateMissions, { attributes: true, attributeFilter: ['finishtime'] }));
   setInterval(tickCountdowns, 1000);
@@ -491,13 +638,15 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.9.3';
+  const VERSION = '0.9.4';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
       ['countdown',     'Einsatz-Countdown',     'Restzeit neben laufenden Einsätzen'],
       ['missionColors', 'Einsatzfarben',         'Rand nach Art: Brand, THL, RD, Polizei'],
       ['missionInfo',   'Einsatzinfos',          'Vergütung in der Einsatzliste'],
+      ['missionSortBar','Einsatzliste sortieren', 'Unalarmierte zuerst, Restzeit, Vergütung oder Entfernung'],
+      ['sharedMine',    'Eigene Fahrzeuge bei Freigaben', 'Zeigt, wie viele deiner Fahrzeuge bei einer Freigabe sind'],
       ['buildingNotes', 'Wachen-Notizen',        'Eigene Notizen an jeder Wache'],
       ['headerStats',   'Tagesleiste',           'Einsätze, freie Fahrzeuge und Tagesverdienst oben'],
       ['tabCounters',   'Reiter-Zähler',         'Neue und gesamte Einsätze an „Einsätze“ und „Freigaben“'],
@@ -621,6 +770,8 @@
     checkS5();
     renderHeaderStats();
     renderTabCounters();
+    loadOwnVehicles();
+    if (settings.missionSort === 'distance' && !buildingSpots.length) loadBuildingSpots();
     if (settings.personnel && !buildingInfo.size) loadBuildings(); else decoratePersonnel();
   }
 
@@ -917,6 +1068,8 @@
     callDesktop:   '<path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
     missionBox:    '<path d="M10 6h10M10 12h10M10 18h10"/><path d="M3.5 6l1.5 1.5L7.5 5M3.5 12l1.5 1.5L7.5 11M3.5 18l1.5 1.5L7.5 17"/>',
     listBar:       '<path d="M3 5h18l-7 8v6l-4-2v-4z"/>',
+    missionSortBar:'<path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/>',
+    sharedMine:    '<path d="M3 16V8h11v8M14 11h4l3 3v2h-7"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 5h4"/>',
     tabCounters:   '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M9 7V4h6v3"/>',
     personnel:     '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/>',
     hotkeys:       '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
@@ -1196,6 +1349,9 @@
           ${sw('statusShowAll', 'Alle Status in der Statusleiste', 'Auch leere Status 5–8 anzeigen')}
           <div class="rh-cc-row"><div class="rh-cc-lbl"><b>Countdown hervorheben</b><small>Restzeit wird grün, wenn weniger als so viele Sekunden übrig sind</small></div>
             <input type="number" min="0" max="600" step="5" data-set="countdownSoon" value="${settings.countdownSoon}"></div>
+          <div class="rh-cc-row"><div class="rh-cc-lbl"><b>Freigabe gilt als versorgt ab</b>
+            <small>So viele <u>eigene</u> Fahrzeuge bei einer Verbandsfreigabe – dann wird sie grün markiert und rutscht in der Liste nach unten</small></div>
+            <input type="number" min="1" max="50" step="1" data-set="sharedEnough" value="${settings.sharedEnough}"></div>
         </div></div>
 
         <div class="rh-cc-sec"><h3>${secIcon('listBar')} Einsatzfenster</h3><div class="rh-cc-rows">

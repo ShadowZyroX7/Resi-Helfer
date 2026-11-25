@@ -19,6 +19,8 @@ Alle Funktionen lassen sich einzeln an- und ausschalten. Dafür gibt es links ne
 - **Einsatz-Countdown:** Restzeit neben laufenden Einsätzen.
 - **Einsatzfarben:** Farbiger Rand nach Einsatzart (Brand, THL, Rettungsdienst, Polizei).
 - **Einsatzinfos:** Mögliche Vergütung direkt in der Einsatzliste.
+- **Einsatzliste sortieren:** Wie im Spiel, unalarmierte zuerst, nach Restzeit, Vergütung oder Entfernung zur nächsten eigenen Wache.
+- **Eigene Fahrzeuge bei Freigaben:** Ein Symbol zeigt, wie viele deiner Fahrzeuge bei einer Verbandsfreigabe sind. Ab einer einstellbaren Anzahl gilt sie als versorgt (grün) und rutscht ans Ende der Liste.
 - **Wachen-Notizen:** Eigene Notizen an jeder Wache.
 - **Personal:** Vorhandenes und benötigtes Personal pro Wache.
 - **Tagesleiste:** Eigene Einsätze, freie Fahrzeuge und Tagesverdienst in der Kopfzeile.
