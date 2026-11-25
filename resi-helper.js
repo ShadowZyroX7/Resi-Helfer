@@ -424,12 +424,8 @@
       m.querySelector('.mission-list-text')?.appendChild(info);
     }
     info.dataset.k = type.id;
-    // nur die bestmögliche Vergütung, kurz: "◉ max. 1,8k" – die Spanne steht im Tooltip
-    const best = Math.max(type.maxCredits || 0, type.credits || 0);
-    const range = type.maxCredits > type.credits
-      ? `${type.credits.toLocaleString('de-DE')} bis ${type.maxCredits.toLocaleString('de-DE')}`
-      : best.toLocaleString('de-DE');
-    info.innerHTML = `<span class="rh-mi-coin" title="Bestmögliche Vergütung: ${best.toLocaleString('de-DE')} Münzen (Spanne: ${range})">◉ max. ${kShort(best)}</span>`;
+    const coins = type.maxCredits > type.credits ? `${kShort(type.credits)}–${kShort(type.maxCredits)}` : kShort(type.credits);
+    info.innerHTML = `<span class="rh-mi-coin" title="Vergütung: ${type.credits} bis ${type.maxCredits} Münzen">◉ ${coins} Münzen</span>`;
   }
 
   function decorateMissions() {
@@ -479,7 +475,7 @@
     ['default',   'Wie im Spiel'],
     ['unalarmed', 'Unalarmierte zuerst'],
     ['time',      'Restzeit (kürzeste zuerst)'],
-    ['credits',   'Vergütung (höchste zuerst)'],
+    ['credits',   'Max. Vergütung'],      // sortiert nach der bestmöglichen Vergütung
     ['distance',  'Entfernung (nächste zuerst)'],
   ];
   let ownByMission = new Map();   // Einsatz-ID -> Anzahl eigener Fahrzeuge
@@ -642,7 +638,7 @@
   // =====================================================================
   // Menü: Symbol in der Kopfleiste + Modulübersicht
   // =====================================================================
-  const VERSION = '0.9.5';
+  const VERSION = '0.9.6';
   const MODULES = [
     ['Leitstelle', [
       ['statusbar',     'Fahrzeug-Statusleiste', 'Zähler S1–S8 über den Wachen, Klick filtert'],
